@@ -14,6 +14,7 @@ from devflow.api.schemas import (
 from devflow.api.service import pipeline_service, create_default_pipeline
 from devflow.core.engine import pipeline_engine
 from devflow.utils.logging import get_logger
+from devflow.utils.exceptions import NotFoundError, ValidationError
 
 logger = get_logger("api.execution")
 router = APIRouter(prefix="/executions", tags=["Execution"])
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/executions", tags=["Execution"])
 async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None:
     """后台任务：运行流水线"""
     import traceback
-    from devflow.models.execution import ExecutionStatus
+    from devflow.models.execution import ExecutionStatus, StageResult, Checkpoint
 
     logger.info("run_pipeline started", execution_id=execution_id, pipeline_id=pipeline_id)
 
@@ -35,9 +36,45 @@ async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None
         pipeline = pipeline_service.get_pipeline(pipeline_id)
         logger.info("Starting pipeline execution", execution_id=execution_id, pipeline_id=pipeline_id)
 
-        result = await pipeline_engine.execute(pipeline, demand, execution_id=execution_id)
+        # Stage 完成时的回调，同步状态到 execution
+        def sync_stage_callback(stage_id: str, state: dict[str, Any]) -> None:
+            """每个 stage 完成后同步状态到 execution"""
+            try:
+                ex = pipeline_service.get_execution(execution_id)
+                ex.current_stage_id = state.get("current_stage_id")
+                ex.updated_at = datetime.utcnow()
 
-        # 更新最终状态
+                # 同步已完成阶段的结果
+                for sid, result_data in state.get("results", {}).items():
+                    if sid not in ex.results:
+                        ex.results[sid] = StageResult(**result_data)
+
+                # 同步 checkpoints
+                for sid, cp_data in state.get("checkpoints", {}).items():
+                    if sid not in ex.checkpoints:
+                        ex.checkpoints[sid] = Checkpoint(**cp_data)
+
+                logger.info("Stage state synced", execution_id=execution_id, stage_id=stage_id)
+            except Exception as e:
+                logger.warning("Failed to sync stage state", execution_id=execution_id, stage_id=stage_id, error=str(e))
+
+        result = await pipeline_engine.execute(
+            pipeline,
+            demand,
+            execution_id=execution_id,
+            stage_callback=sync_stage_callback,
+        )
+
+        # 同步 engine 返回的最终结果到 execution
+        execution.results = {
+            stage_id: StageResult(**stage_data)
+            for stage_id, stage_data in result.get("results", {}).items()
+        }
+        execution.checkpoints = {
+            stage_id: Checkpoint(**cp_data)
+            for stage_id, cp_data in result.get("checkpoints", {}).items()
+        }
+        execution.current_stage_id = result.get("current_stage_id")
         execution.status = ExecutionStatus.COMPLETED
         execution.updated_at = datetime.utcnow()
 

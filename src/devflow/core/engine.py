@@ -41,7 +41,11 @@ class PipelineEngine:
         """Get the registered agent for a stage type."""
         return self._executors.get(stage_type.value)
 
-    def build_graph(self, pipeline: Pipeline) -> StateGraph:
+    def build_graph(
+        self,
+        pipeline: Pipeline,
+        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> StateGraph:
         """Build a LangGraph from pipeline definition."""
         graph = StateGraph(PipelineState)
 
@@ -50,12 +54,12 @@ class PipelineEngine:
             stage_id = stage.id
 
             # Create node function for this stage
-            def make_stage_node(s: PipelineStage):
+            def make_stage_node(s: PipelineStage, callback):
                 async def stage_node(state: PipelineState) -> dict[str, Any]:
-                    return await self._execute_stage(s, state)
+                    return await self._execute_stage(s, state, callback)
                 return stage_node
 
-            graph.add_node(stage_id, make_stage_node(stage))
+            graph.add_node(stage_id, make_stage_node(stage, stage_callback))
 
         # Add checkpoint handler node (for processing approval status)
         async def checkpoint_handler(state: PipelineState) -> dict[str, Any]:
@@ -88,6 +92,7 @@ class PipelineEngine:
         self,
         stage: PipelineStage,
         state: PipelineState,
+        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Execute a single stage."""
         from datetime import datetime as dt
@@ -167,6 +172,12 @@ class PipelineEngine:
         results[stage.id] = stage_result.model_dump()
         new_state["results"] = results
 
+        # Update stage history
+        history = list(state.get("stage_history", []))
+        if stage.id not in history:
+            history.append(stage.id)
+        new_state["stage_history"] = history
+
         # Handle checkpoint creation
         if stage.is_checkpoint:
             checkpoint = Checkpoint(
@@ -181,6 +192,13 @@ class PipelineEngine:
             new_state["checkpoints"] = checkpoints
 
         new_state["updated_at"] = dt.utcnow().isoformat()
+
+        # Trigger callback if provided
+        if stage_callback:
+            try:
+                stage_callback(stage.id, new_state)
+            except Exception as e:
+                logger.warning("Stage callback failed", stage_id=stage.id, error=str(e))
 
         return new_state
 
@@ -264,6 +282,7 @@ class PipelineEngine:
         pipeline: Pipeline,
         demand: str,
         execution_id: str | None = None,
+        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> PipelineState:
         """Execute a pipeline with the given demand input."""
         execution_id = execution_id or str(uuid4())
@@ -283,15 +302,16 @@ class PipelineEngine:
 
         logger.info("Initial state created", initial_state=initial_state)
 
-        # Build graph if not cached
-        if pipeline.id not in self._compiled:
-            graph = self.build_graph(pipeline)
-            self._compiled[pipeline.id] = graph.compile()
+        # Build graph if not cached (with callback if provided)
+        cache_key = f"{pipeline.id}:{stage_callback is not None}"
+        if cache_key not in self._compiled or stage_callback is not None:
+            graph = self.build_graph(pipeline, stage_callback)
+            self._compiled[cache_key] = graph.compile()
             self._graphs[pipeline.id] = graph
             logger.info("Graph built and compiled", pipeline_id=pipeline.id)
 
         # Execute
-        compiled_graph = self._compiled[pipeline.id]
+        compiled_graph = self._compiled[cache_key]
 
         try:
             result = await compiled_graph.ainvoke(initial_state)
@@ -321,13 +341,15 @@ class PipelineEngine:
         self,
         pipeline: Pipeline,
         demand: str,
+        execution_id: str | None = None,
         callback: Callable[[PipelineState], None] | None = None,
+        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> str:
         """Execute pipeline asynchronously, returns execution_id."""
-        execution_id = str(uuid4())
+        execution_id = execution_id or str(uuid4())
 
         async def run():
-            result = await self.execute(pipeline, demand)
+            result = await self.execute(pipeline, demand, execution_id, stage_callback)
             if callback:
                 callback(result)
 

@@ -130,6 +130,7 @@ class PipelineService:
             pipeline_id=pipeline_id,
             status=ExecutionStatus.PENDING,
             context={"demand": demand, "config": config or {}},
+            current_stage_id=pipeline.stages[0].id if pipeline.stages else None,
         )
 
         self._executions[execution_id] = execution
