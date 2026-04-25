@@ -1,6 +1,8 @@
-"""Code generation agent with artifact extraction."""
+"""Code generation agent with artifact extraction and file writing."""
 
+import os
 import re
+from pathlib import Path
 from typing import Any
 
 from devflow.agents.simple_agent import SimpleAgent
@@ -72,7 +74,7 @@ class CodeGenerationAgent(SimpleAgent):
         task: str,
         context: dict[str, Any],
     ) -> AgentResult:
-        """Execute with artifact extraction."""
+        """Execute with artifact extraction and file writing."""
         # Add JSON format instruction to task
         enhanced_task = task + "\n\nPlease provide your response in JSON format with the artifact array."
 
@@ -83,7 +85,46 @@ class CodeGenerationAgent(SimpleAgent):
             artifacts = self._extract_artifacts(result.output.get("response", ""))
             result.artifacts = [a.model_dump() for a in artifacts]
 
+            # Write artifacts to files
+            self._write_artifacts(artifacts, context)
+
         return result
+
+    def _write_artifacts(
+        self,
+        artifacts: list[CodeArtifact],
+        context: dict[str, Any],
+    ) -> list[str]:
+        """Write code artifacts to filesystem."""
+        written_files = []
+        base_path = context.get("output_dir", ".")
+
+        for artifact in artifacts:
+            try:
+                file_path = Path(base_path) / artifact.file_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Handle different change types
+                if artifact.change_type == "delete":
+                    if file_path.exists():
+                        file_path.unlink()
+                        logger.info("File deleted", path=str(file_path))
+                        written_files.append(str(file_path))
+                else:
+                    mode = "wb" if not artifact.file_path.endswith((".py", ".txt", ".md", ".json", ".yaml", ".yml", ".js", ".ts", ".tsx", ".go", ".rs", ".java")) else "w"
+                    
+                    if mode == "wb":
+                        file_path.write_bytes(artifact.content.encode())
+                    else:
+                        file_path.write_text(artifact.content, encoding="utf-8")
+                    
+                    logger.info("File written", path=str(file_path), change_type=artifact.change_type)
+                    written_files.append(str(file_path))
+
+            except Exception as e:
+                logger.error("Failed to write artifact", path=artifact.file_path, error=str(e))
+
+        return written_files
 
     def _extract_artifacts(self, content: str) -> list[CodeArtifact]:
         """Extract code artifacts from LLM response."""
