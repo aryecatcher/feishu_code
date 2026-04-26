@@ -8,6 +8,9 @@ from devflow.api.schemas import (
     PipelineUpdate,
     PipelineResponse,
     PipelineListResponse,
+    PipelineConfigResponse,
+    Descriptions,
+    Stages,
 )
 from devflow.api.service import pipeline_service
 from devflow.utils.logging import get_logger
@@ -75,24 +78,29 @@ async def list_pipelines(
     )
 
 
-@router.get("/{pipeline_id}", response_model=PipelineResponse, summary="获取流水线详情", description="根据ID获取指定流水线的详细信息")
-async def get_pipeline(pipeline_id: str) -> PipelineResponse:
+@router.get("/{pipeline_id}", response_model=PipelineConfigResponse, summary="获取流水线配置", description="根据ID获取指定流水线的配置信息")
+async def get_pipeline(pipeline_id: str) -> PipelineConfigResponse:
     """
-    获取流水线详情。
+    获取流水线配置。
 
     - **pipeline_id**: 流水线唯一标识
+
+    返回流水线配置信息，包括描述、阶段等信息。
     """
     try:
         pipeline = pipeline_service.get_pipeline(pipeline_id)
-        return PipelineResponse(
-            id=pipeline.id,
-            name=pipeline.name,
-            description=pipeline.description,
-            stages=pipeline.stages,
-            status=pipeline.status,
-            created_at=pipeline.created_at,
-            updated_at=pipeline.updated_at,
-            metadata=pipeline.metadata,
+
+        # 构建 stages 列表
+        stages_list = [Stages(stage_id=stage.id) for stage in pipeline.stages]
+
+        return PipelineConfigResponse(
+            config=pipeline.metadata,
+            descriptions=Descriptions(
+                content=pipeline.description,
+                title=pipeline.name,
+            ),
+            pipeline_id=pipeline.id,
+            stages=stages_list,
         )
     except Exception as e:
         if "not found" in str(e).lower():

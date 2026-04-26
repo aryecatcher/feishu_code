@@ -58,6 +58,30 @@ class PipelineListResponse(BaseResponse):
     page_size: int
 
 
+# ============ PipelineConfig Schemas ============
+
+class Descriptions(BaseResponse):
+    """流水线描述，文字描述该模板"""
+
+    content: str | None = Field(default=None, description="详情")
+    title: str = Field(..., description="标题")
+
+
+class Stages(BaseResponse):
+    """流水线阶段配置，连接各阶段StageID"""
+
+    stage_id: str = Field(..., description="阶段编号")
+
+
+class PipelineConfigResponse(BaseResponse):
+    """PipelineConfig 响应格式"""
+
+    config: dict[str, Any] | None = Field(default=None, description="额外配置")
+    descriptions: Descriptions = Field(..., description="流水线描述，文字描述该模板")
+    pipeline_id: str | None = Field(default=None, description="流水线编号，用于绑定模板")
+    stages: list[Stages] = Field(..., description="流水线阶段配置，连接各阶段StageID")
+
+
 # ============ Execution Schemas ============
 
 class ExecutionCreate(BaseModel):
