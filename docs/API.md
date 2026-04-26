@@ -46,7 +46,7 @@ All errors follow a standard format:
 Check API health status.
 
 ```
-GET /health
+GET /api/health
 ```
 
 **Response**
@@ -72,7 +72,7 @@ GET /health
 Create a new pipeline definition.
 
 ```
-POST /pipelines
+POST /api/pipelines
 ```
 
 **Request Body**
@@ -122,7 +122,7 @@ POST /pipelines
 Get all pipelines with pagination.
 
 ```
-GET /pipelines?page=1&page_size=20
+GET /api/pipelines?page=1&page_size=20
 ```
 
 **Query Parameters**
@@ -148,7 +148,7 @@ GET /pipelines?page=1&page_size=20
 Get a specific pipeline.
 
 ```
-GET /pipelines/{pipeline_id}
+GET /api/pipelines/{pipeline_id}
 ```
 
 **Response**
@@ -166,7 +166,7 @@ GET /pipelines/{pipeline_id}
 Update a pipeline.
 
 ```
-PUT /pipelines/{pipeline_id}
+PUT /api/pipelines/{pipeline_id}
 ```
 
 **Request Body**
@@ -183,7 +183,7 @@ PUT /pipelines/{pipeline_id}
 Delete a pipeline.
 
 ```
-DELETE /pipelines/{pipeline_id}
+DELETE /api/pipelines/{pipeline_id}
 ```
 
 **Response**: 204 No Content
@@ -197,7 +197,7 @@ DELETE /pipelines/{pipeline_id}
 Create and start a pipeline execution.
 
 ```
-POST /executions
+POST /api/executions
 ```
 
 **Request Body**
@@ -231,7 +231,7 @@ POST /executions
 Get all executions with optional pipeline filter.
 
 ```
-GET /executions?pipeline_id=pipeline-uuid&page=1&page_size=20
+GET /api/executions?pipeline_id=pipeline-uuid&page=1&page_size=20
 ```
 
 **Query Parameters**
@@ -247,7 +247,7 @@ GET /executions?pipeline_id=pipeline-uuid&page=1&page_size=20
 Get detailed execution status.
 
 ```
-GET /executions/{execution_id}
+GET /api/executions/{execution_id}
 ```
 
 **Response**
@@ -282,7 +282,7 @@ GET /executions/{execution_id}
 Cancel a running execution.
 
 ```
-POST /executions/{execution_id}/cancel
+POST /api/executions/{execution_id}/cancel
 ```
 
 ### Pause Execution
@@ -290,7 +290,7 @@ POST /executions/{execution_id}/cancel
 Pause a running execution.
 
 ```
-POST /executions/{execution_id}/pause
+POST /api/executions/{execution_id}/pause
 ```
 
 ### Resume Execution
@@ -298,7 +298,7 @@ POST /executions/{execution_id}/pause
 Resume a paused execution.
 
 ```
-POST /executions/{execution_id}/resume
+POST /api/executions/{execution_id}/resume
 ```
 
 ---
@@ -310,7 +310,7 @@ POST /executions/{execution_id}/resume
 Get all pending approval checkpoints.
 
 ```
-GET /checkpoints?execution_id=execution-uuid
+GET /api/checkpoints?execution_id=execution-uuid
 ```
 
 **Response**
@@ -341,7 +341,7 @@ GET /checkpoints?execution_id=execution-uuid
 Get a specific checkpoint.
 
 ```
-GET /checkpoints/{execution_id}/{stage_id}
+GET /api/checkpoints/{execution_id}/{stage_id}
 ```
 
 ### Approve Checkpoint
@@ -349,7 +349,7 @@ GET /checkpoints/{execution_id}/{stage_id}
 Approve a checkpoint to proceed.
 
 ```
-POST /checkpoints/{execution_id}/{stage_id}/approve
+POST /api/checkpoints/{execution_id}/{stage_id}/approve
 ```
 
 **Request Body**
@@ -366,7 +366,7 @@ POST /checkpoints/{execution_id}/{stage_id}/approve
 Reject a checkpoint and trigger rollback.
 
 ```
-POST /checkpoints/{execution_id}/{stage_id}/reject
+POST /api/checkpoints/{execution_id}/{stage_id}/reject
 ```
 
 **Request Body**
@@ -383,7 +383,7 @@ POST /checkpoints/{execution_id}/{stage_id}/reject
 Get summary of all checkpoints for an execution.
 
 ```
-GET /checkpoints/{execution_id}/summary
+GET /api/checkpoints/{execution_id}/summary
 ```
 
 **Response**
@@ -435,7 +435,7 @@ GET /checkpoints/{execution_id}/summary
 ### Create Pipeline
 
 ```bash
-curl -X POST http://localhost:8000/pipelines \
+curl -X POST http://localhost:8000/api/pipelines \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Demo Pipeline",
@@ -447,7 +447,7 @@ curl -X POST http://localhost:8000/pipelines \
 ### Start Execution
 
 ```bash
-curl -X POST http://localhost:8000/executions \
+curl -X POST http://localhost:8000/api/executions \
   -H "Content-Type: application/json" \
   -d '{
     "pipeline_id": "your-pipeline-id",
@@ -458,13 +458,13 @@ curl -X POST http://localhost:8000/executions \
 ### Check Execution Status
 
 ```bash
-curl http://localhost:8000/executions/execution-id
+curl http://localhost:8000/api/executions/execution-id
 ```
 
 ### Approve Checkpoint
 
 ```bash
-curl -X POST http://localhost:8000/checkpoints/execution-id/scheme-design/approve \
+curl -X POST http://localhost:8000/api/checkpoints/execution-id/scheme-design/approve \
   -H "Content-Type: application/json" \
   -d '{"comment": "同意此方案"}'
 ```
@@ -479,7 +479,7 @@ async def main():
     client = httpx.AsyncClient(base_url="http://localhost:8000")
 
     # Create execution
-    response = await client.post("/executions", json={
+    response = await client.post("/api/executions", json={
         "pipeline_id": "your-pipeline-id",
         "demand": "我需要一个登录功能..."
     })
@@ -488,14 +488,14 @@ async def main():
 
     # Poll for status
     while True:
-        response = await client.get(f"/executions/{execution_id}")
+        response = await client.get(f"/api/executions/{execution_id}")
         status = response.json()
 
         if status["status"] == "waiting_approval":
             print("Checkpoint reached! Review required.")
             # Get checkpoint details
             checkpoint = await client.get(
-                f"/checkpoints/{execution_id}/{status['current_stage_id']}"
+                f"/api/checkpoints/{execution_id}/{status['current_stage_id']}"
             )
             print(checkpoint.json())
             break

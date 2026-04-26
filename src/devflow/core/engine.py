@@ -12,6 +12,7 @@ from devflow.models.execution import Execution, ExecutionStatus, StageResult, Ch
 from devflow.agents.base import BaseAgent, AgentResult
 from devflow.utils.logging import get_logger
 from devflow.utils.exceptions import PipelineError, StageError
+from devflow.core.checkpoint import checkpoint_manager
 
 logger = get_logger("engine")
 
@@ -178,15 +179,14 @@ class PipelineEngine:
             history.append(stage.id)
         new_state["stage_history"] = history
 
-        # Handle checkpoint creation
+        # Handle checkpoint creation - register with checkpoint_manager for API access
         if stage.is_checkpoint:
-            checkpoint = Checkpoint(
-                id=str(uuid4()),
+            checkpoint = checkpoint_manager.create_checkpoint(
                 execution_id=state["execution_id"],
                 stage_id=stage.id,
                 stage_result=stage_result,
-                status=ExecutionStatus.WAITING_APPROVAL,
             )
+            # Also store in state for pipeline engine use
             checkpoints = dict(state.get("checkpoints", {}))
             checkpoints[stage.id] = checkpoint.model_dump()
             new_state["checkpoints"] = checkpoints

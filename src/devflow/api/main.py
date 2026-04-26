@@ -65,10 +65,10 @@ app = FastAPI(
 
 ### Swagger 使用流程
 
-1. **启动执行**: `POST /executions` 创建执行并启动流水线
-2. **轮询状态**: `GET /executions/{execution_id}` 查看执行进度
+1. **启动执行**: `POST /api/executions` 创建执行并启动流水线
+2. **轮询状态**: `GET /api/executions/{execution_id}` 查看执行进度
 3. **等待审批**: 当状态变为 `waiting_approval` 时，到检查点接口查看待审批项
-4. **审批检查点**: `POST /checkpoints/{execution_id}/{stage_id}/approve` 批准继续执行
+4. **审批检查点**: `POST /api/checkpoints/{execution_id}/{stage_id}/approve` 批准继续执行
     """,
     version=settings.app_version,
     docs_url="/docs",
@@ -105,7 +105,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Health check endpoint
-@app.get("/health", response_model=HealthResponse, tags=["Health"], summary="健康检查", description="检查服务是否正常运行")
+@app.get("/api/health", response_model=HealthResponse, tags=["Health"], summary="健康检查", description="检查服务是否正常运行")
 async def health_check() -> HealthResponse:
     """
     健康检查接口。
@@ -131,10 +131,10 @@ async def health_check() -> HealthResponse:
     )
 
 
-# Include routers
-app.include_router(pipeline.router)
-app.include_router(execution.router)
-app.include_router(checkpoint.router)
+# Include routers with /api prefix
+app.include_router(pipeline.router, prefix="/api")
+app.include_router(execution.router, prefix="/api")
+app.include_router(checkpoint.router, prefix="/api")
 
 
 # Root endpoint
