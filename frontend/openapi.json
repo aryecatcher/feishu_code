@@ -1,0 +1,654 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Pipeline 模块",
+    "description": "",
+    "version": "1.0.0"
+  },
+  "tags": [],
+  "paths": {
+    "/api/v1/pipelines/{pipeline_id}": {
+      "get": {
+        "summary": "获取流水线详情",
+        "deprecated": false,
+        "description": "获取流水线模板详情信息。",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "pipeline_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineConfig"
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      },
+      "put": {
+        "summary": "更新流水线定义",
+        "deprecated": false,
+        "description": "更新流水线模板信息。",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "pipeline_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/v1/pipelines/{pipeline_id}/run": {
+      "post": {
+        "summary": "创建并运行流水线实例",
+        "deprecated": false,
+        "description": "基于定义创建并运行流水线实例，返回运行实例ID。",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "pipeline_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSummary"
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/checkpoints": {
+      "get": {
+        "summary": "获取检查点列表",
+        "deprecated": false,
+        "description": "获取检查点的概述信息",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Checkpoint"
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/{stage_id}": {
+      "get": {
+        "summary": "获取检查点详情",
+        "deprecated": false,
+        "description": "",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stage_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/{stage_id}/approve": {
+      "post": {
+        "summary": "通过检查点",
+        "deprecated": false,
+        "description": "通过该检查点",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stage_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/{stage_id}/reject": {
+      "post": {
+        "summary": "驳回检查点",
+        "deprecated": false,
+        "description": "驳回该检查点",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stage_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}": {
+      "get": {
+        "summary": "获取实例详情",
+        "deprecated": false,
+        "description": "获取实例运行摘要信息",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "唯一实例ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSummary"
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/pause": {
+      "post": {
+        "summary": "暂停执行",
+        "deprecated": false,
+        "description": "暂停实例执行",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/resume": {
+      "post": {
+        "summary": "恢复执行",
+        "deprecated": false,
+        "description": "恢复暂停的实例执行",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/runs/{run_id}/terminate": {
+      "post": {
+        "summary": "强制终止",
+        "deprecated": false,
+        "description": "强制停止进行中的实例执行",
+        "tags": [],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PipelineConfig": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "integer",
+            "title": "流水线编号",
+            "description": "用于绑定模板，可采用默认值"
+          },
+          "descriptions": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "title": "标题"
+              },
+              "content": {
+                "type": "string",
+                "title": "详情"
+              }
+            },
+            "title": "流水线描述",
+            "description": "文字描述该模板",
+            "required": [
+              "title"
+            ]
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "title": "流水线阶段配置",
+            "description": "连接各阶段StageID"
+          },
+          "config": {
+            "type": "object",
+            "properties": {},
+            "title": "额外配置"
+          }
+        },
+        "required": [
+          "pipeline_id",
+          "descriptions",
+          "stages"
+        ]
+      },
+      "StageConfig": {
+        "type": "object",
+        "properties": {
+          "stage_id": {
+            "type": "integer",
+            "title": "阶段编号"
+          },
+          "descriptions": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "title": "标题"
+              },
+              "content": {
+                "type": "string",
+                "title": "详情"
+              }
+            },
+            "title": "阶段描述",
+            "description": "简要描述阶段内容",
+            "required": [
+              "title"
+            ]
+          },
+          "agent_config": {
+            "type": "object",
+            "properties": {
+              "model_provider": {
+                "type": "object",
+                "properties": {},
+                "title": "模型提供商",
+                "description": "提供大模型接入"
+              },
+              "roles": {
+                "type": "object",
+                "properties": {},
+                "title": "模型配置",
+                "description": "配置预定信息"
+              }
+            },
+            "required": [
+              "model_provider",
+              "roles"
+            ],
+            "title": "Agent配置",
+            "description": "配置该阶段Agent信息"
+          }
+        },
+        "required": [
+          "stage_id",
+          "agent_config",
+          "descriptions"
+        ]
+      },
+      "RunSummary": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "integer",
+            "title": "流水线模板编号",
+            "description": "连接流水线模板"
+          },
+          "run_id": {
+            "type": "integer",
+            "title": "实例编号",
+            "description": "标注实例"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "title": "运行状态",
+                "description": "running|paused|awaiting_checkpoint|completed|failed|cancelled"
+              },
+              "current_stage": {
+                "type": "string",
+                "title": "当前阶段编号",
+                "description": "连接stage_id"
+              }
+            },
+            "required": [
+              "status",
+              "current_stage"
+            ],
+            "title": "运行概况"
+          }
+        },
+        "required": [
+          "pipeline_id",
+          "run_id",
+          "summary"
+        ]
+      },
+      "Checkpoint": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "实例编号",
+            "description": "连接运行实例"
+          },
+          "checkpoint_id": {
+            "type": "integer",
+            "title": "检查点编号",
+            "description": "标注检查点"
+          },
+          "reviews": {
+            "type": "string",
+            "title": "检查点说明",
+            "description": "呈现检查点内容"
+          },
+          "resolution": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "title": "决策",
+                "description": "accept|reject"
+              },
+              "context_id": {
+                "type": "integer",
+                "description": "反馈内容编号"
+              }
+            },
+            "title": "用户决策",
+            "required": [
+              "action",
+              "context_id"
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "checkpoint_id",
+          "reviews",
+          "resolution"
+        ]
+      },
+      "Context": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "实例编号",
+            "description": "绑定运行实例"
+          },
+          "context_id": {
+            "type": "integer",
+            "title": "交付内容编号",
+            "description": "标注交付内容"
+          },
+          "type": {
+            "type": "string",
+            "title": "交付类型",
+            "description": "initial|checkpoint"
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "string",
+                "title": "用户提示词",
+                "description": "可选，提示词内容"
+              },
+              "refs": {
+                "type": "object",
+                "properties": {
+                  "codebase": {
+                    "type": "object",
+                    "properties": {},
+                    "title": "代码库定位"
+                  },
+                  "dom": {
+                    "type": "object",
+                    "properties": {},
+                    "title": "网页元素定位"
+                  }
+                },
+                "title": "上下文定位",
+                "description": "可选，上下文内容"
+              }
+            },
+            "title": "交付内容",
+            "description": "具体交付内容"
+          }
+        },
+        "required": [
+          "run_id",
+          "context_id",
+          "type",
+          "content"
+        ]
+      }
+    },
+    "responses": {},
+    "securitySchemes": {}
+  },
+  "servers": [],
+  "security": []
+}
