@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from devflow.api.routes import pipeline, execution, checkpoint
-from devflow.api.service import create_default_pipeline
+from devflow.api.service import create_default_pipeline, pipeline_service
 from devflow.api.schemas import HealthResponse, ErrorResponse
 from devflow.llm import llm_manager
 from devflow.utils.config import settings
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     # Initialize default pipeline
     try:
         pipeline = create_default_pipeline()
+        pipeline_service._default_pipeline_id = pipeline.id
         logger.info("Default pipeline initialized", pipeline_id=pipeline.id)
     except Exception as e:
         logger.warning("Failed to initialize default pipeline", error=str(e))

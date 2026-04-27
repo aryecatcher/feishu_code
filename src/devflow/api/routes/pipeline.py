@@ -11,6 +11,8 @@ from devflow.api.schemas import (
     PipelineConfigResponse,
     Descriptions,
     Stages,
+    SetDefaultPipelineRequest,
+    DefaultPipelineResponse,
 )
 from devflow.api.service import pipeline_service
 from devflow.utils.logging import get_logger
@@ -108,11 +110,11 @@ async def get_pipeline(pipeline_id: str) -> PipelineConfigResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/{pipeline_id}", response_model=PipelineResponse, summary="更新流水线", description="更新指定流水线的配置")
+@router.put("/{pipeline_id}", status_code=200, summary="更新流水线", description="更新指定流水线的配置")
 async def update_pipeline(
     pipeline_id: str,
     data: PipelineUpdate,
-) -> PipelineResponse:
+) -> None:
     """
     更新流水线。
 
@@ -120,21 +122,13 @@ async def update_pipeline(
     - **name**: 新名称（可选）
     - **description**: 新描述（可选）
     - **stages**: 新阶段列表（可选）
+
+    返回 200 状态码表示更新成功。
     """
     try:
-        pipeline = pipeline_service.update_pipeline(
+        pipeline_service.update_pipeline(
             pipeline_id,
             data.model_dump(exclude_unset=True),
-        )
-        return PipelineResponse(
-            id=pipeline.id,
-            name=pipeline.name,
-            description=pipeline.description,
-            stages=pipeline.stages,
-            status=pipeline.status,
-            created_at=pipeline.created_at,
-            updated_at=pipeline.updated_at,
-            metadata=pipeline.metadata,
         )
     except Exception as e:
         if "not found" in str(e).lower():
@@ -154,4 +148,75 @@ async def delete_pipeline(pipeline_id: str) -> None:
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/default",
+    response_model=DefaultPipelineResponse,
+    summary="设置默认流水线",
+    description="将指定流水线设置为默认流水线",
+)
+async def set_default_pipeline(data: SetDefaultPipelineRequest) -> DefaultPipelineResponse:
+    """
+    设置默认流水线。
+
+    - **pipeline_id**: 要设置为默认的流水线ID
+    """
+    try:
+        pipeline = pipeline_service.set_default_pipeline(data.pipeline_id)
+        stages_list = [Stages(stage_id=stage.id) for stage in pipeline.stages]
+
+        return DefaultPipelineResponse(
+            default_pipeline_id=pipeline.id,
+            default_pipeline=PipelineConfigResponse(
+                config=pipeline.metadata,
+                descriptions=Descriptions(
+                    content=pipeline.description,
+                    title=pipeline.name,
+                ),
+                pipeline_id=pipeline.id,
+                stages=stages_list,
+            ),
+        )
+    except Exception as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/default",
+    response_model=DefaultPipelineResponse,
+    summary="获取默认流水线",
+    description="获取当前设置为默认的流水线信息",
+)
+async def get_default_pipeline() -> DefaultPipelineResponse:
+    """
+    获取默认流水线信息。
+    """
+    try:
+        pipeline_id = pipeline_service.get_default_pipeline_id()
+        if not pipeline_id:
+            return DefaultPipelineResponse(
+                default_pipeline_id=None,
+                default_pipeline=None,
+            )
+
+        pipeline = pipeline_service.get_pipeline(pipeline_id)
+        stages_list = [Stages(stage_id=stage.id) for stage in pipeline.stages]
+
+        return DefaultPipelineResponse(
+            default_pipeline_id=pipeline.id,
+            default_pipeline=PipelineConfigResponse(
+                config=pipeline.metadata,
+                descriptions=Descriptions(
+                    content=pipeline.description,
+                    title=pipeline.name,
+                ),
+                pipeline_id=pipeline.id,
+                stages=stages_list,
+            ),
+        )
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

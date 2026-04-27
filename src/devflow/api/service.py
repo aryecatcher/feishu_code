@@ -22,6 +22,7 @@ class PipelineService:
         self._pipelines: dict[str, Pipeline] = {}
         self._executions: dict[str, Execution] = {}
         self._agent_factory = AgentFactory()
+        self._default_pipeline_id: str | None = None
 
     def create_pipeline(self, data: dict[str, Any]) -> Pipeline:
         """Create a new pipeline."""
@@ -48,13 +49,11 @@ class PipelineService:
     def get_pipeline(self, pipeline_id: str) -> Pipeline:
         """Get a pipeline by ID."""
         if pipeline_id == "default":
-            # Return the first pipeline as default
-            pipelines = list(self._pipelines.values())
-            if pipelines:
-                return pipelines[0]
+            if self._default_pipeline_id and self._default_pipeline_id in self._pipelines:
+                return self._pipelines[self._default_pipeline_id]
             raise NotFoundError(
-                "No pipeline found. Please create a pipeline first.",
-                details={"pipeline_id": pipeline_id},
+                "No default pipeline set. Please set a default pipeline first.",
+                details={"default_pipeline_id": self._default_pipeline_id},
             )
 
         pipeline = self._pipelines.get(pipeline_id)
@@ -89,12 +88,26 @@ class PipelineService:
         """Update an existing pipeline."""
         pipeline = self.get_pipeline(pipeline_id)
 
-        if data.get("name"):
-            pipeline.name = data["name"]
-        if "description" in data:
-            pipeline.description = data["description"]
+        # 处理 descriptions
+        if data.get("descriptions"):
+            descriptions = data["descriptions"]
+            if isinstance(descriptions, dict):
+                if descriptions.get("title"):
+                    pipeline.name = descriptions["title"]
+                if descriptions.get("content") is not None:
+                    pipeline.description = descriptions["content"]
+
+        # 处理 stages (stage_id 列表)
         if data.get("stages"):
-            pipeline.stages = data["stages"]
+            stage_ids = data["stages"]
+            # 根据 stage_id 筛选对应的阶段
+            updated_stages = [stage for stage in pipeline.stages if stage.id in stage_ids]
+            if updated_stages:
+                pipeline.stages = updated_stages
+
+        # 处理 config
+        if data.get("config") is not None:
+            pipeline.metadata = data["config"]
 
         pipeline.updated_at = datetime.utcnow()
 
@@ -112,7 +125,27 @@ class PipelineService:
 
         del self._pipelines[pipeline_id]
 
+        if self._default_pipeline_id == pipeline_id:
+            self._default_pipeline_id = None
+
         logger.info("Pipeline deleted", pipeline_id=pipeline_id)
+
+    def set_default_pipeline(self, pipeline_id: str) -> Pipeline:
+        """Set a pipeline as the default pipeline."""
+        if pipeline_id not in self._pipelines:
+            raise NotFoundError(
+                f"Pipeline not found: {pipeline_id}",
+                details={"pipeline_id": pipeline_id},
+            )
+
+        self._default_pipeline_id = pipeline_id
+        logger.info("Default pipeline set", pipeline_id=pipeline_id)
+
+        return self._pipelines[pipeline_id]
+
+    def get_default_pipeline_id(self) -> str | None:
+        """Get the default pipeline ID."""
+        return self._default_pipeline_id
 
     def create_execution(
         self,

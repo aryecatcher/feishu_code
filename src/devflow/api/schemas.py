@@ -28,14 +28,6 @@ class PipelineCreate(BaseResponse):
     stages: list[PipelineStage] = Field(..., min_length=1)
 
 
-class PipelineUpdate(BaseResponse):
-    """Request to update a pipeline."""
-
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
-    stages: list[PipelineStage] | None = None
-
-
 class PipelineResponse(BaseResponse):
     """Pipeline response."""
 
@@ -80,6 +72,27 @@ class PipelineConfigResponse(BaseResponse):
     descriptions: Descriptions = Field(..., description="流水线描述，文字描述该模板")
     pipeline_id: str | None = Field(default=None, description="流水线编号，用于绑定模板")
     stages: list[Stages] = Field(..., description="流水线阶段配置，连接各阶段StageID")
+
+
+class PipelineUpdate(BaseResponse):
+    """Request to update a pipeline."""
+
+    descriptions: Descriptions | None = None
+    stages: list[str] | None = None
+    config: dict[str, Any] | None = None
+
+
+class SetDefaultPipelineRequest(BaseModel):
+    """Request to set a pipeline as default."""
+
+    pipeline_id: str = Field(..., description="Pipeline ID to set as default")
+
+
+class DefaultPipelineResponse(BaseResponse):
+    """Response for default pipeline info."""
+
+    default_pipeline_id: str | None
+    default_pipeline: "PipelineConfigResponse | None" = None
 
 
 # ============ Execution Schemas ============
