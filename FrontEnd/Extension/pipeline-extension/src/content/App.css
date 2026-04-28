@@ -70,8 +70,43 @@
 
 /* 最终圈选框保持显示样式 */
 .selection-rect-final {
-  border: 2px solid #165dff;
+  border: 5px solid #165dff;
   background: rgba(22, 93, 255, 0.1);
   pointer-events: none;
   z-index: 999998;
+}
+
+/* 内容盒子头部 */
+.content-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.content-box-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.content-box-close {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+/* 内容盒子主体 */
+.content-box-body {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.content-box-list {
+  padding-left: 20px;
+  margin: 8px 0;
 }
