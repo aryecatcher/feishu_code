@@ -1,0 +1,77 @@
+.crx-root {
+  position: relative;
+  z-index: 999999;
+}
+
+/* 悬浮窗样式 */
+.float-box {
+  position: fixed;
+  width: 80px;
+  height: 80px;
+  background: #165dff;
+  color: white;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: move;
+  user-select: none;
+  box-shadow: 0 4px 20px rgba(22, 93, 255, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.float-box:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 24px rgba(22, 93, 255, 0.5);
+}
+
+.float-box:active {
+  cursor: grabbing;
+  transform: scale(0.95);
+}
+
+/* 圈选遮罩层 */
+.selection-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 999999;
+  cursor: crosshair;
+}
+
+/* 圈选方框 */
+.selection-rect {
+  position: absolute;
+  background: transparent;
+  border: 2px solid #165dff;
+  box-shadow: 0 0 0 99999px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+/* 内容展示盒子 */
+.content-box {
+  position: fixed;
+  width: 300px;
+  min-height: 200px;
+  background: #4096ff;
+  color: white;
+  border-radius: 12px;
+  padding: 20px;
+  font-size: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+  user-select: none;
+}
+
+/* 最终圈选框保持显示样式 */
+.selection-rect-final {
+  border: 2px solid #165dff;
+  background: rgba(22, 93, 255, 0.1);
+  pointer-events: none;
+  z-index: 999998;
+}
