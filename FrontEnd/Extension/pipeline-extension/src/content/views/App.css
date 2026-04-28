@@ -1,56 +1,77 @@
-.popup-container {
+.crx-root {
+  position: relative;
+  z-index: 999999;
+}
+
+/* 悬浮窗样式 */
+.float-box {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  margin: 1.25rem;
-  z-index: 100;
+  width: 80px;
+  height: 80px;
+  background: #165dff;
+  color: white;
+  border-radius: 12px;
   display: flex;
-  align-items: flex-end;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  user-select: none;
-  line-height: 1em;
-}
-
-.popup-content {
-  background-color: white;
-  color: #1f2937;
-  border-radius: 0.5rem;
-  box-shadow:
-    0 4px 6px -1px rgb(0 0 0 / 0.1),
-    0 2px 4px -2px rgb(0 0 0 / 0.1);
-  width: max-content;
-  height: min-content;
-  padding: 0.5rem 1rem;
-  margin: auto 0.5rem 0 0;
-  transition: opacity 300ms;
-}
-
-.toggle-button {
-  display: flex;
+  align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 9999px;
-  box-shadow:
-    0 1px 3px 0 rgb(0 0 0 / 0.1),
-    0 1px 2px -1px rgb(0 0 0 / 0.1);
-  cursor: pointer;
-  border: none;
-  background-color: #288cd7;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: move;
+  user-select: none;
+  box-shadow: 0 4px 20px rgba(22, 93, 255, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.toggle-button:hover {
-  background-color: #1e6aa3;
+.float-box:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 24px rgba(22, 93, 255, 0.5);
 }
 
-.button-icon {
-  padding: 4px;
+.float-box:active {
+  cursor: grabbing;
+  transform: scale(0.95);
 }
 
-.opacity-100 {
-  opacity: 1;
+/* 圈选遮罩层 */
+.selection-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 999999;
+  cursor: crosshair;
 }
 
-.opacity-0 {
-  opacity: 0;
+/* 圈选方框 */
+.selection-rect {
+  position: absolute;
+  background: transparent;
+  border: 2px solid #165dff;
+  box-shadow: 0 0 0 99999px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+/* 内容展示盒子 */
+.content-box {
+  position: fixed;
+  width: 300px;
+  min-height: 200px;
+  background: #4096ff;
+  color: white;
+  border-radius: 12px;
+  padding: 20px;
+  font-size: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+  user-select: none;
+}
+
+/* 最终圈选框保持显示样式 */
+.selection-rect-final {
+  border: 2px solid #165dff;
+  background: rgba(22, 93, 255, 0.1);
+  pointer-events: none;
+  z-index: 999998;
 }
