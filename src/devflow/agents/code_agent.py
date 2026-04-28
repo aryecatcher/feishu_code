@@ -97,7 +97,7 @@ class CodeGenerationAgent(SimpleAgent):
     ) -> list[str]:
         """Write code artifacts to filesystem."""
         written_files = []
-        base_path = context.get("output_dir", ".")
+        base_path = context.get("output_dir", "output")
 
         for artifact in artifacts:
             try:

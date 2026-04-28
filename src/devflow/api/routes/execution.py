@@ -66,6 +66,7 @@ async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None
         )
 
         # 同步 engine 返回的最终结果到 execution
+        # 注意：需要检查 result.status 以判断是正常完成还是暂停在 checkpoint
         execution.results = {
             stage_id: StageResult(**stage_data)
             for stage_id, stage_data in result.get("results", {}).items()
@@ -75,10 +76,19 @@ async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None
             for stage_id, cp_data in result.get("checkpoints", {}).items()
         }
         execution.current_stage_id = result.get("current_stage_id")
-        execution.status = ExecutionStatus.COMPLETED
+        
+        # 根据 engine 返回的状态判断实际执行状态
+        result_status = result.get("status")
+        if result_status == ExecutionStatus.WAITING_APPROVAL.value:
+            # 执行暂停在 checkpoint 等待审批
+            execution.status = ExecutionStatus.WAITING_APPROVAL
+        else:
+            # 正常完成
+            execution.status = ExecutionStatus.COMPLETED
+            
         execution.updated_at = datetime.utcnow()
 
-        logger.info("Pipeline execution completed", execution_id=execution_id)
+        logger.info("Pipeline execution completed", execution_id=execution_id, final_status=execution.status.value)
     except Exception as e:
         error_detail = traceback.format_exc()
         logger.error("Pipeline execution failed", execution_id=execution_id, error=error_detail)
@@ -250,18 +260,106 @@ async def resume_execution(execution_id: str) -> dict:
 
     - **execution_id**: 执行唯一标识
     """
+    from devflow.models.execution import ExecutionStatus, StageResult, Checkpoint
+
+    def sync_stage_callback(stage_id: str, state: dict[str, Any]) -> None:
+        """每个 stage 完成后同步状态到 execution"""
+        try:
+            ex = pipeline_service.get_execution(execution_id)
+            ex.current_stage_id = state.get("current_stage_id")
+            ex.updated_at = datetime.utcnow()
+
+            # 同步已完成阶段的结果
+            for sid, result_data in state.get("results", {}).items():
+                if sid not in ex.results:
+                    ex.results[sid] = StageResult(**result_data)
+
+            # 同步 checkpoints
+            for sid, cp_data in state.get("checkpoints", {}).items():
+                if sid not in ex.checkpoints:
+                    ex.checkpoints[sid] = Checkpoint(**cp_data)
+
+            logger.info("Stage state synced during resume", execution_id=execution_id, stage_id=stage_id)
+        except Exception as e:
+            logger.warning("Failed to sync stage state during resume", execution_id=execution_id, stage_id=stage_id, error=str(e))
+
     try:
-        execution = pipeline_service.resume_execution(execution_id)
+        # 1. 获取 execution 和 pipeline
+        execution = pipeline_service.get_execution(execution_id)
+        pipeline = pipeline_service.get_pipeline(execution.pipeline_id)
+
+        # 2. 更新状态为 running
+        execution.status = ExecutionStatus.RUNNING
+        execution.updated_at = datetime.utcnow()
+
+        logger.info("Starting pipeline resume", execution_id=execution_id, pipeline_id=pipeline.id)
+
+        # 3. 调用 engine.resume() 恢复执行，传入回调以同步状态
+        result = await pipeline_engine.resume(
+            pipeline,
+            execution_id,
+            stage_callback=sync_stage_callback,
+        )
+
+        # 4. 同步 engine 返回的完整状态到 execution
+        # 重新获取最新状态，覆盖式同步（而非增量合并）
+        ex = pipeline_service.get_execution(execution_id)
+        
+        # 同步所有结果（覆盖已存在的以获取最新状态）
+        if "results" in result:
+            ex.results = {
+                sid: StageResult(**stage_data) 
+                for sid, stage_data in result["results"].items()
+            }
+
+        # 同步所有 checkpoints
+        if "checkpoints" in result:
+            ex.checkpoints = {
+                sid: Checkpoint(**cp_data)
+                for sid, cp_data in result["checkpoints"].items()
+            }
+
+        # 同步关键状态字段
+        ex.current_stage_id = result.get("current_stage_id")
+        
+        # 处理状态值（可能是枚举或字符串）
+        result_status = result.get("status")
+        if isinstance(result_status, str):
+            ex.status = ExecutionStatus(result_status)
+        elif isinstance(result_status, ExecutionStatus):
+            ex.status = result_status
+        else:
+            ex.status = ExecutionStatus.RUNNING
+
+        # 如果执行完成，更新完成时间
+        if ex.status in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED}:
+            ex.completed_at = datetime.utcnow()
+
+        ex.updated_at = datetime.utcnow()
+
+        logger.info(
+            "Pipeline resumed and completed",
+            execution_id=execution_id,
+            current_stage=ex.current_stage_id,
+            status=ex.status.value,
+            results_count=len(ex.results),
+        )
+
         return {
-            "status": "running",
+            "status": ex.status.value,
             "execution_id": execution_id,
-            "current_stage_id": execution.current_stage_id,
+            "current_stage_id": ex.current_stage_id,
+            "results_count": len(ex.results),
+            "checkpoints_count": len(ex.checkpoints),
         }
+
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        import traceback
+        logger.error("Resume execution failed", execution_id=execution_id, error=traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

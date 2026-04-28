@@ -1,5 +1,8 @@
 """Checkpoint API routes - 检查点审批接口"""
 
+from datetime import datetime
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 
 from devflow.api.schemas import (
@@ -9,10 +12,72 @@ from devflow.api.schemas import (
     CheckpointListResponse,
 )
 from devflow.api.service import pipeline_service
+from devflow.models.execution import ExecutionStatus, StageResult, Checkpoint
 from devflow.utils.logging import get_logger
 
 logger = get_logger("api.checkpoint")
 router = APIRouter(prefix="/checkpoints", tags=["Checkpoint"])
+
+
+def sync_execution_from_engine(
+    execution_id: str,
+    engine_result: dict[str, Any],
+) -> None:
+    """
+    将 Engine 执行结果同步到 Execution 记录。
+
+    在 checkpoint 审批后调用，确保 Execution 状态与 Engine 内部状态一致。
+    """
+    try:
+        execution = pipeline_service.get_execution(execution_id)
+    except Exception as e:
+        logger.error("Failed to get execution for sync", execution_id=execution_id, error=str(e))
+        return
+
+    # 同步 results
+    for stage_id, result_data in engine_result.get("results", {}).items():
+        if isinstance(result_data, dict):
+            if stage_id not in execution.results:
+                execution.results[stage_id] = StageResult(**result_data)
+            else:
+                # 更新已存在的 result
+                execution.results[stage_id] = StageResult(**result_data)
+
+    # 同步 checkpoints
+    for stage_id, cp_data in engine_result.get("checkpoints", {}).items():
+        if isinstance(cp_data, dict):
+            if stage_id not in execution.checkpoints:
+                execution.checkpoints[stage_id] = Checkpoint(**cp_data)
+            else:
+                # 更新已存在的 checkpoint
+                execution.checkpoints[stage_id] = Checkpoint(**cp_data)
+
+    # 同步 current_stage_id
+    if engine_result.get("current_stage_id"):
+        execution.current_stage_id = engine_result["current_stage_id"]
+
+    # 同步 status
+    result_status = engine_result.get("status")
+    if result_status:
+        try:
+            execution.status = ExecutionStatus(result_status)
+        except ValueError:
+            logger.warning("Unknown status from engine", status=result_status)
+
+    # 同步 error
+    if engine_result.get("error"):
+        execution.error = engine_result["error"]
+
+    execution.updated_at = datetime.utcnow()
+
+    logger.info(
+        "Execution state synced from engine",
+        execution_id=execution_id,
+        current_stage=execution.current_stage_id,
+        status=execution.status.value,
+        results_count=len(execution.results),
+        checkpoints_count=len(execution.checkpoints),
+    )
 
 
 @router.get("", response_model=CheckpointListResponse, summary="查询待审批检查点", description="获取所有待审批的检查点列表")
@@ -77,6 +142,8 @@ async def approve_checkpoint(
 
     批准后流水线将继续执行下一阶段。
     """
+    from devflow.core.engine import pipeline_engine
+
     try:
         checkpoint = pipeline_service.approve_checkpoint(
             execution_id=execution_id,
@@ -84,6 +151,33 @@ async def approve_checkpoint(
             comment=data.comment,
             approver=data.approver,
         )
+
+        # Resume the interrupted pipeline execution
+        execution = pipeline_service.get_execution(execution_id)
+        pipeline = pipeline_service.get_pipeline(execution.pipeline_id)
+
+        # 同步当前状态（resume 前的状态）
+        sync_execution_from_engine(execution_id, {
+            "current_stage_id": execution.current_stage_id,
+            "results": {k: v.model_dump() for k, v in execution.results.items()},
+            "checkpoints": {k: v.model_dump() for k, v in execution.checkpoints.items()},
+            "status": ExecutionStatus.WAITING_APPROVAL.value,
+        })
+
+        # 直接 await resume（不放在后台任务中），确保同步完成后返回
+        logger.info("Resuming pipeline after approval", execution_id=execution_id, stage_id=stage_id)
+        engine_result = await pipeline_engine.resume(pipeline, execution_id, resume_value="approved")
+
+        # 同步 Engine 执行结果到 Execution
+        sync_execution_from_engine(execution_id, engine_result)
+
+        # 重新获取 checkpoint 返回最新状态
+        updated_checkpoint = pipeline_service.get_pending_checkpoints(execution_id)
+        for cp in updated_checkpoint:
+            if cp["stage_id"] == stage_id:
+                return CheckpointResponse(**cp)
+
+        # 如果没有待审批的 checkpoint，返回更新后的状态
         return CheckpointResponse(**checkpoint)
     except Exception as e:
         if "not found" in str(e).lower():
@@ -107,6 +201,8 @@ async def reject_checkpoint(
 
     拒绝后将触发回滚流程。
     """
+    from devflow.core.engine import pipeline_engine
+
     try:
         checkpoint = pipeline_service.reject_checkpoint(
             execution_id=execution_id,
@@ -114,6 +210,33 @@ async def reject_checkpoint(
             comment=data.comment,
             rejector=data.rejector,
         )
+
+        # Resume the interrupted pipeline execution to trigger rollback
+        execution = pipeline_service.get_execution(execution_id)
+        pipeline = pipeline_service.get_pipeline(execution.pipeline_id)
+
+        # 同步当前状态（resume 前的状态）
+        sync_execution_from_engine(execution_id, {
+            "current_stage_id": execution.current_stage_id,
+            "results": {k: v.model_dump() for k, v in execution.results.items()},
+            "checkpoints": {k: v.model_dump() for k, v in execution.checkpoints.items()},
+            "status": ExecutionStatus.WAITING_APPROVAL.value,
+        })
+
+        # 直接 await resume，确保同步完成后返回
+        logger.info("Resuming pipeline after rejection", execution_id=execution_id, stage_id=stage_id)
+        engine_result = await pipeline_engine.resume(pipeline, execution_id, resume_value="rejected")
+
+        # 同步 Engine 执行结果到 Execution
+        sync_execution_from_engine(execution_id, engine_result)
+
+        # 重新获取 checkpoint 返回最新状态
+        updated_checkpoint = pipeline_service.get_pending_checkpoints(execution_id)
+        for cp in updated_checkpoint:
+            if cp["stage_id"] == stage_id:
+                return CheckpointResponse(**cp)
+
+        # 如果没有待审批的 checkpoint（回滚后重试），返回更新后的状态
         return CheckpointResponse(**checkpoint)
     except Exception as e:
         if "not found" in str(e).lower():

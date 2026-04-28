@@ -30,8 +30,12 @@ class PipelineState(TypedDict, total=False):
     # Checkpoints
     checkpoints: dict[str, Checkpoint]
 
-    # Human feedback at checkpoints
-    checkpoint_feedback: dict[str, str]  # stage_id -> feedback
+    # Checkpoint handling (set by checkpoint_handler)
+    checkpoint_status: str  # Current checkpoint status
+    rejection_comment: str  # Rejection reason if rejected
+
+    # Human feedback at checkpoints (for current stage retry)
+    checkpoint_feedback: str
 
     # Final output
     final_artifacts: list[dict[str, Any]]
@@ -63,7 +67,9 @@ def create_initial_state(
         current_stage_id=None,
         stage_history=[],
         checkpoints={},
-        checkpoint_feedback={},
+        checkpoint_status="",
+        rejection_comment="",
+        checkpoint_feedback="",
         final_artifacts=[],
         error=None,
         error_stage_id=None,
