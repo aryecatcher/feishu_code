@@ -246,6 +246,19 @@ Original Task:
             except Exception as e:
                 logger.warning("Stage callback failed", stage_id=stage.id, error=str(e))
 
+        # 在 interrupt() 之前创建 checkpoint，使用户可以立即查询待审批项
+        if stage.is_checkpoint:
+            checkpoint = checkpoint_manager.upsert_checkpoint(
+                execution_id=state["execution_id"],
+                stage_id=stage.id,
+                stage_result=stage_result,
+            )
+            logger.info(
+                "Checkpoint created for stage",
+                stage_id=stage.id,
+                checkpoint_id=checkpoint.id,
+            )
+
         return new_state
 
     async def _handle_approval(
