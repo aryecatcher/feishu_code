@@ -91,10 +91,30 @@ class CheckpointManager:
 
         This method is designed to be called after interrupt() returns,
         avoiding duplicate checkpoint creation on node re-execution.
+
+        If checkpoint was already processed (approved/rejected), it will be
+        reset to WAITING_APPROVAL status to allow re-approval after retry.
         """
         existing = self.get_checkpoint_by_stage(execution_id, stage_id)
 
         if existing:
+            # Check if checkpoint needs to be reset for re-approval
+            if existing.status in (ExecutionStatus.APPROVED, ExecutionStatus.REJECTED):
+                logger.info(
+                    "Checkpoint was already processed, resetting for re-approval",
+                    checkpoint_id=existing.id,
+                    previous_status=existing.status.value,
+                    stage_id=stage_id,
+                )
+                existing.status = ExecutionStatus.WAITING_APPROVAL
+                existing.stage_result = stage_result
+                existing.decided_at = None
+                existing.decided_by = None
+                existing.comment = None
+                existing.approval_action = None
+                self._notify_pending(existing)
+                return existing
+
             logger.info(
                 "Checkpoint already exists, skipping creation",
                 checkpoint_id=existing.id,
