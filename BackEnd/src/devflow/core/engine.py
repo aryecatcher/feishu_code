@@ -65,12 +65,13 @@ class PipelineEngine:
 
         self._current_pipeline = pipeline
 
-        for stage in pipeline.stages:
+        for i, stage in enumerate(pipeline.stages):
             stage_id = stage.id
 
             if stage.is_checkpoint:
+                next_stage_id = pipeline.stages[i + 1].id if i + 1 < len(pipeline.stages) else None
                 stage_node = self._make_stage_node(stage, stage_callback)
-                approval_node = self._make_approval_node(stage)
+                approval_node = self._make_approval_node(stage, next_stage_id)
 
                 graph.add_node(stage_id, stage_node)
                 graph.add_node(f"{stage_id}_approval", approval_node)
@@ -90,16 +91,21 @@ class PipelineEngine:
         return graph
 
     def _build_edges(self, pipeline: Pipeline) -> list[tuple[str, str]]:
-        """Build edges for the graph."""
+        """
+        Build edges for the graph.
+
+        For checkpoint stages, approval_node routing is controlled via Command(goto=...)
+        in _handle_approval, so we don't add static edges from approval nodes.
+        The approval node itself will decide where to route based on the approval decision.
+        """
         edges = []
         for i, stage in enumerate(pipeline.stages):
             if stage.is_checkpoint:
+                # Static edge: stage -> approval_node
+                # Dynamic routing: approval_node -> next/retry/END handled by Command(goto=...)
                 edges.append((stage.id, f"{stage.id}_approval"))
-                if i + 1 < len(pipeline.stages):
-                    edges.append((f"{stage.id}_approval", pipeline.stages[i + 1].id))
-                else:
-                    edges.append((f"{stage.id}_approval", END))
             else:
+                # Non-checkpoint stage: linear flow
                 if i + 1 < len(pipeline.stages):
                     edges.append((stage.id, pipeline.stages[i + 1].id))
                 else:
@@ -116,17 +122,22 @@ class PipelineEngine:
             return await self._execute_stage(stage, state, stage_callback)
         return stage_node
 
-    def _make_approval_node(self, stage: PipelineStage):
+    def _make_approval_node(self, stage: PipelineStage, next_stage_id: str | None):
         """
         Create a node function for checkpoint approval.
 
         This follows the official LangGraph pattern:
         1. interrupt() at the beginning (for pause)
         2. Side effect (upsert_checkpoint) after interrupt
-        3. Command(goto=...) for routing
+        3. Command(goto=...) for routing based on approval/rejection
+
+        Routing logic:
+        - Approve: goto next_stage_id (or END if last stage)
+        - Reject: goto stage.id (retry current stage)
+        - Unknown action: goto next_stage_id (default to approve)
         """
         async def approval_node(state: PipelineState) -> Command[Literal]:
-            return await self._handle_approval(stage, state)
+            return await self._handle_approval(stage, state, next_stage_id)
         return approval_node
 
     async def _execute_stage(
@@ -239,6 +250,7 @@ Original Task:
         self,
         stage: PipelineStage,
         state: PipelineState,
+        next_stage_id: str | None,
     ) -> Command[Literal]:
         """
         Handle checkpoint approval/rejection.
@@ -248,6 +260,11 @@ Original Task:
         2. On resume, interrupt() returns the approval data
         3. upsert_checkpoint is called after interrupt (idempotent)
         4. Command(goto=...) routes based on approval/rejection
+
+        Routing:
+        - Approve: goto next_stage_id (or END if this is the last stage)
+        - Reject: goto stage.id (retry current stage)
+        - Unknown action: default to approve (goto next_stage_id or END)
         """
         from datetime import datetime as dt
 
@@ -321,10 +338,11 @@ Original Task:
             logger.info(
                 "Checkpoint approved, proceeding to next stage",
                 stage_id=stage.id,
+                next_stage=next_stage_id,
                 checkpoint_id=checkpoint.id,
             )
             return Command(
-                goto=END,
+                goto=next_stage_id or END,
                 update={
                     **new_state,
                     "status": [ExecutionStatus.RUNNING],
@@ -361,7 +379,7 @@ Original Task:
                 action=action,
             )
             return Command(
-                goto=END,
+                goto=next_stage_id or END,
                 update={
                     **new_state,
                     "status": [ExecutionStatus.RUNNING],
