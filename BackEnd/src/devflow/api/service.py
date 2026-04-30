@@ -307,6 +307,24 @@ class PipelineService:
         checkpoints = checkpoint_manager.get_pending_checkpoints(execution_id)
         return [c.model_dump() for c in checkpoints]
 
+    def get_all_checkpoints(
+        self,
+        execution_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get all checkpoints with optional filters."""
+        from devflow.models.execution import ExecutionStatus
+
+        status_enum = None
+        if status:
+            try:
+                status_enum = ExecutionStatus(status)
+            except ValueError:
+                pass
+
+        checkpoints = checkpoint_manager.get_all_checkpoints(execution_id, status_enum)
+        return [c.model_dump() for c in checkpoints]
+
     def cancel_execution(self, execution_id: str) -> Execution:
         """Cancel a running or pending execution."""
         execution = self.get_execution(execution_id)

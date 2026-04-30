@@ -150,11 +150,12 @@ class PipelineEngine:
         from datetime import datetime as dt
 
         current_id = list(state.get("current_stage_id") or [])
+        is_retry = stage.id in current_id
         logger.info(
             "Starting stage execution",
             stage_id=stage.id,
             stage_type=stage.stage_type.value,
-            is_retry=stage.id == current_id,
+            is_retry=is_retry,
         )
 
         agent = self.get_agent(stage.stage_type)
@@ -168,7 +169,8 @@ class PipelineEngine:
         task = context["task"]
 
         if checkpoint_feedback := state.get("checkpoint_feedback"):
-            if stage.id == current_id:
+            # 在重试场景下，checkpoint_feedback 会被设置，此时将拒绝原因注入任务
+            if stage.id in current_id:
                 logger.info(
                     "Adding checkpoint feedback to task",
                     stage_id=stage.id,

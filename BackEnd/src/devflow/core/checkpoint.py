@@ -143,6 +143,31 @@ class CheckpointManager:
 
         return checkpoints
 
+    def get_all_checkpoints(
+        self,
+        execution_id: str | None = None,
+        status: ExecutionStatus | None = None,
+    ) -> list[Checkpoint]:
+        """
+        Get all checkpoints with optional filters.
+
+        Args:
+            execution_id: Filter by execution ID
+            status: Filter by checkpoint status
+
+        Returns:
+            List of checkpoints matching the filters
+        """
+        checkpoints = list(self._checkpoints.values())
+
+        if execution_id:
+            checkpoints = [c for c in checkpoints if c.execution_id == execution_id]
+
+        if status:
+            checkpoints = [c for c in checkpoints if c.status == status]
+
+        return checkpoints
+
     def approve(
         self,
         checkpoint_id: str,

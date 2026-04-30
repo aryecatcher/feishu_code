@@ -10,6 +10,7 @@ from devflow.api.schemas import (
     CheckpointReject,
     CheckpointResponse,
     CheckpointListResponse,
+    CheckpointAllListResponse,
 )
 from devflow.api.service import pipeline_service
 from devflow.models.execution import ExecutionStatus, StageResult, Checkpoint
@@ -97,6 +98,51 @@ async def list_pending_checkpoints(
         items=[CheckpointResponse(**c) for c in checkpoints],
         total=len(checkpoints),
         pending=len(checkpoints),
+    )
+
+
+@router.get("/all", response_model=CheckpointAllListResponse, summary="获取所有检查点")
+async def list_all_checkpoints(
+    execution_id: str | None = None,
+    status: str | None = None,
+) -> CheckpointAllListResponse:
+    """
+    获取所有检查点（不限于待审批状态）。
+
+    - **execution_id**: 可选，按执行ID筛选
+    - **status**: 可选，按状态筛选 (WAITING_APPROVAL / APPROVED / REJECTED)
+    """
+    from devflow.models.execution import ExecutionStatus
+
+    checkpoints = pipeline_service.get_all_checkpoints(execution_id, status)
+
+    # 统计
+    total = len(checkpoints)
+    pending = len([c for c in checkpoints if c.get("status") == ExecutionStatus.WAITING_APPROVAL.value])
+    approved = len([c for c in checkpoints if c.get("status") == ExecutionStatus.APPROVED.value])
+    rejected = len([c for c in checkpoints if c.get("status") == ExecutionStatus.REJECTED.value])
+
+    # 按状态分组
+    by_status = {
+        "WAITING_APPROVAL": pending,
+        "APPROVED": approved,
+        "REJECTED": rejected,
+    }
+
+    # 按执行分组
+    by_execution: dict[str, int] = {}
+    for c in checkpoints:
+        exec_id = c.get("execution_id", "unknown")
+        by_execution[exec_id] = by_execution.get(exec_id, 0) + 1
+
+    return CheckpointAllListResponse(
+        items=[CheckpointResponse(**c) for c in checkpoints],
+        total=total,
+        pending=pending,
+        approved=approved,
+        rejected=rejected,
+        by_status=by_status,
+        by_execution=by_execution,
     )
 
 

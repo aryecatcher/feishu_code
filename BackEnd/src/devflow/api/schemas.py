@@ -188,6 +188,18 @@ class CheckpointListResponse(BaseResponse):
     pending: int
 
 
+class CheckpointAllListResponse(BaseResponse):
+    """所有检查点的响应（包含统计信息）"""
+
+    items: list[CheckpointResponse] = Field(description="检查点列表")
+    total: int = Field(description="总数")
+    pending: int = Field(description="待审批数")
+    approved: int = Field(description="已批准数")
+    rejected: int = Field(description="已拒绝数")
+    by_status: dict[str, int] = Field(description="按状态分组的数量")
+    by_execution: dict[str, int] = Field(description="按执行分组的数量")
+
+
 # ============ Stage Schemas ============
 
 class StageResultResponse(BaseModel):
