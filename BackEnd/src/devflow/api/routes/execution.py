@@ -41,7 +41,7 @@ async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None
             """每个 stage 完成后同步状态到 execution"""
             try:
                 ex = pipeline_service.get_execution(execution_id)
-                ex.current_stage_id = state.get("current_stage_id")
+                ex.current_stage_id = state.get("current_stage_id") or []
                 ex.updated_at = datetime.utcnow()
 
                 # 同步已完成阶段的结果
@@ -75,11 +75,11 @@ async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None
             stage_id: Checkpoint(**cp_data)
             for stage_id, cp_data in result.get("checkpoints", {}).items()
         }
-        execution.current_stage_id = result.get("current_stage_id")
+        execution.current_stage_id = (result.get("current_stage_id") or [])
         
         # 根据 engine 返回的状态判断实际执行状态
-        result_status = result.get("status")
-        if result_status == ExecutionStatus.WAITING_APPROVAL.value:
+        result_status_list = result.get("status") or []
+        if ExecutionStatus.WAITING_APPROVAL in result_status_list:
             # 执行暂停在 checkpoint 等待审批
             execution.status = ExecutionStatus.WAITING_APPROVAL
         else:
@@ -134,8 +134,8 @@ async def create_execution(
         return ExecutionResponse(
             id=execution.id,
             pipeline_id=execution.pipeline_id,
-            status=execution.status,
-            current_stage_id=execution.current_stage_id,
+            status=list(execution.status or []),
+            current_stage_id=execution.current_stage_id or [],
             results={},
             checkpoints={},
             created_at=execution.created_at,
@@ -173,7 +173,7 @@ async def list_executions(
                 "id": e.id,
                 "pipeline_id": e.pipeline_id,
                 "status": e.status.value,
-                "current_stage_id": e.current_stage_id,
+                "current_stage_id": e.current_stage_id or [],
                 "created_at": e.created_at.isoformat(),
                 "updated_at": e.updated_at.isoformat() if e.updated_at else None,
             }
@@ -243,7 +243,7 @@ async def pause_execution(execution_id: str) -> dict:
         return {
             "status": "paused",
             "execution_id": execution_id,
-            "current_stage_id": execution.current_stage_id,
+            "current_stage_id": execution.current_stage_id or [],
         }
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -266,7 +266,7 @@ async def resume_execution(execution_id: str) -> dict:
         """每个 stage 完成后同步状态到 execution"""
         try:
             ex = pipeline_service.get_execution(execution_id)
-            ex.current_stage_id = state.get("current_stage_id")
+            ex.current_stage_id = list(state.get("current_stage_id") or [])
             ex.updated_at = datetime.utcnow()
 
             # 同步已完成阶段的结果
@@ -320,7 +320,7 @@ async def resume_execution(execution_id: str) -> dict:
             }
 
         # 同步关键状态字段
-        ex.current_stage_id = result.get("current_stage_id")
+            ex.current_stage_id = result.get("current_stage_id") or []
         
         # 处理状态值（可能是枚举或字符串）
         result_status = result.get("status")
@@ -340,7 +340,7 @@ async def resume_execution(execution_id: str) -> dict:
         logger.info(
             "Pipeline resumed and completed",
             execution_id=execution_id,
-            current_stage=ex.current_stage_id,
+            current_stage=ex.current_stage_id or [],
             status=ex.status.value,
             results_count=len(ex.results),
         )
@@ -348,7 +348,7 @@ async def resume_execution(execution_id: str) -> dict:
         return {
             "status": ex.status.value,
             "execution_id": execution_id,
-            "current_stage_id": ex.current_stage_id,
+            "current_stage_id": list(ex.current_stage_id or []),
             "results_count": len(ex.results),
             "checkpoints_count": len(ex.checkpoints),
         }
@@ -426,7 +426,7 @@ async def test_run_pipeline(data: TestRunRequest) -> dict:
                 "status": "completed",
                 "result": {
                     "status": result.get("status"),
-                    "current_stage_id": result.get("current_stage_id"),
+                    "current_stage_id": result.get("current_stage_id") or [],
                     "results": result.get("results", {}),
                     "output": {
                         "files_written": written_files,
@@ -441,7 +441,7 @@ async def test_run_pipeline(data: TestRunRequest) -> dict:
             "status": "completed",
             "result": {
                 "status": result.get("status"),
-                "current_stage_id": result.get("current_stage_id"),
+                    "current_stage_id": result.get("current_stage_id") or [],
                 "results": result.get("results", {}),
                 "output": {
                     "files_written": [],

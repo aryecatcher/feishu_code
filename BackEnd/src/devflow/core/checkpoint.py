@@ -80,6 +80,31 @@ class CheckpointManager:
                 return checkpoint
         return None
 
+    def upsert_checkpoint(
+        self,
+        execution_id: str,
+        stage_id: str,
+        stage_result: StageResult,
+    ) -> Checkpoint:
+        """
+        Create or update a checkpoint idempotently.
+
+        This method is designed to be called after interrupt() returns,
+        avoiding duplicate checkpoint creation on node re-execution.
+        """
+        existing = self.get_checkpoint_by_stage(execution_id, stage_id)
+
+        if existing:
+            logger.info(
+                "Checkpoint already exists, skipping creation",
+                checkpoint_id=existing.id,
+                execution_id=execution_id,
+                stage_id=stage_id,
+            )
+            return existing
+
+        return self.create_checkpoint(execution_id, stage_id, stage_result)
+
     def get_pending_checkpoints(
         self,
         execution_id: str | None = None,

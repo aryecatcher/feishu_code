@@ -1,16 +1,16 @@
 """Pipeline Engine - LangGraph based workflow orchestration."""
 
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Literal
 from uuid import uuid4
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, END
-from langgraph.types import Command
+from langgraph.types import interrupt, Command
 
 from devflow.core.state import PipelineState, create_initial_state
 from devflow.models.pipeline import Pipeline, PipelineStage, StageType
-from devflow.models.execution import Execution, ExecutionStatus, StageResult, Checkpoint
+from devflow.models.execution import ExecutionStatus, StageResult
 from devflow.agents.base import BaseAgent, AgentResult
 from devflow.utils.logging import get_logger
 from devflow.utils.exceptions import PipelineError, StageError
@@ -23,18 +23,22 @@ class PipelineEngine:
     """
     LangGraph-based pipeline engine for orchestrating AI agents.
 
-    Handles:
-    - Pipeline compilation and execution
-    - Stage state management
-    - Human-in-the-loop checkpoints
-    - Error handling and recovery
+    Uses the official LangGraph dual-node pattern for checkpoint approval:
+    - Stage Node: Executes the agent
+    - Approval Node: Handles interrupt() and approval/rejection flow
+
+    Key features:
+    - interrupt() is called at the beginning of the approval node
+    - Side effects (checkpoint creation) happen after interrupt()
+    - Command(goto=...) is used for routing after approval/rejection
     """
 
     def __init__(self):
         self._graphs: dict[str, StateGraph] = {}
         self._compiled: dict[str, Any] = {}
         self._executors: dict[str, BaseAgent] = {}
-        self._checkpointers: dict[str, MemorySaver] = {}  # Per pipeline checkpointer
+        self._checkpointers: dict[str, MemorySaver] = {}
+        self._current_pipeline: Pipeline | None = None
 
     def register_agent(self, stage_type: StageType, agent: BaseAgent) -> None:
         """Register an agent for a specific stage type."""
@@ -48,224 +52,36 @@ class PipelineEngine:
     def build_graph(
         self,
         pipeline: Pipeline,
-        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        stage_callback: Any = None,
     ) -> StateGraph:
-        """Build a LangGraph from pipeline definition."""
+        """
+        Build a LangGraph from pipeline definition.
+
+        Uses dual-node pattern for checkpoint stages:
+        - stage_id: Executes the agent
+        - stage_id_approval: Handles interrupt() and approval flow
+        """
         graph = StateGraph(PipelineState)
 
-        # Store pipeline reference for use in nested functions
         self._current_pipeline = pipeline
 
-        # Add nodes for each stage
         for stage in pipeline.stages:
             stage_id = stage.id
 
-            def make_stage_node(s: PipelineStage, callback, engine_self):
-                async def stage_node(state: PipelineState) -> dict[str, Any]:
-                    return await engine_self._execute_stage(s, state, callback)
-                return stage_node
+            if stage.is_checkpoint:
+                stage_node = self._make_stage_node(stage, stage_callback)
+                approval_node = self._make_approval_node(stage)
 
-            graph.add_node(stage_id, make_stage_node(stage, stage_callback, self))
-
-        # Checkpoint handler - checks status and decides what to do next
-        async def checkpoint_handler(state: PipelineState) -> dict[str, Any]:
-            """
-            Handle checkpoint status check.
-
-            This node runs after each checkpoint stage completes.
-            It checks the checkpoint status from checkpoint_manager and
-            returns instructions for the routing function.
-
-            Returns:
-                - checkpoint_status: Current status (APPROVED/REJECTED/WAITING)
-                - rejection_comment: The rejection reason if REJECTED
-            """
-            current_id = state.get("current_stage_id")
-            if not current_id:
-                logger.warning("checkpoint_handler: no current_stage_id in state")
-                return {"checkpoint_status": "", "rejection_comment": ""}
-
-            cp_in_state = state.get("checkpoints", {}).get(current_id)
-            if not cp_in_state:
-                logger.warning(
-                    "checkpoint_handler: no checkpoint in state for stage",
-                    stage_id=current_id,
-                )
-                return {"checkpoint_status": "", "rejection_comment": ""}
-
-            # Get latest status from checkpoint_manager
-            checkpoint_id = cp_in_state.get("id")
-            latest_checkpoint = checkpoint_manager.get_checkpoint(checkpoint_id)
-
-            if not latest_checkpoint:
-                logger.warning(
-                    "checkpoint_handler: checkpoint not found in manager",
-                    checkpoint_id=checkpoint_id,
-                )
-                return {"checkpoint_status": "", "rejection_comment": ""}
-
-            status = latest_checkpoint.status.value
-            rejection_comment = latest_checkpoint.comment if status == ExecutionStatus.REJECTED.value else ""
-
-            logger.info(
-                "Checkpoint handler processing",
-                checkpoint_id=checkpoint_id,
-                status=status,
-                current_stage=current_id,
-            )
-
-            return {
-                "checkpoint_status": status,
-                "rejection_comment": rejection_comment,
-            }
-
-        graph.add_node("checkpoint_handler", checkpoint_handler)
-
-        # Rollback handler - clears current stage results for re-execution
-        async def rollback_handler(state: PipelineState) -> dict[str, Any]:
-            """
-            Handle checkpoint rejection: prepare state for re-executing the current stage.
-            
-            This clears:
-            - The current stage's result (so it will be re-executed)
-            - The checkpoint (so a new one will be created)
-            
-            And preserves:
-            - Previous stage results
-            - The rejection feedback for the agent to see
-            """
-            current_id = state.get("current_stage_id")
-            rejection_comment = state.get("rejection_comment", "")
-
-            if not current_id:
-                return {}
-
-            logger.info(
-                "Rollback handler: preparing for re-execution",
-                stage=current_id,
-                feedback=rejection_comment,
-            )
-
-            # Clear results from current stage onwards
-            new_results = {}
-            found_current = False
-            for stage in self._current_pipeline.stages:
-                if stage.id == current_id:
-                    found_current = True
-                elif found_current:
-                    # Skip - don't include results after current stage
-                    pass
-                else:
-                    # Keep results from previous stages
-                    if stage.id in state.get("results", {}):
-                        new_results[stage.id] = state["results"][stage.id]
-
-            # Clear checkpoints from current stage onwards
-            new_checkpoints = {}
-            for stage_id, cp in state.get("checkpoints", {}).items():
-                # Keep checkpoints only from stages before current
-                if stage_id != current_id:
-                    new_checkpoints[stage_id] = cp
-
-            return {
-                "results": new_results,
-                "checkpoints": new_checkpoints,
-                "status": ExecutionStatus.RUNNING,
-                "checkpoint_feedback": rejection_comment,
-            }
-
-        graph.add_node("rollback_handler", rollback_handler)
-
-        # Routing: checkpoint_handler decides where to go next
-        def checkpoint_routing(state: PipelineState) -> str:
-            """
-            Route based on checkpoint status (read live from checkpoint_manager).
-
-            WAITING_APPROVAL -> END (wait for external approval via API)
-            APPROVED -> next stage
-            REJECTED -> rollback_handler
-            """
-            current_id = state.get("current_stage_id")
-            if not current_id:
-                return END
-
-            cp_in_state = state.get("checkpoints", {}).get(current_id)
-            if not cp_in_state:
-                return END
-
-            # Read live status from checkpoint_manager, not from saved state
-            checkpoint_id = cp_in_state.get("id")
-            latest_checkpoint = checkpoint_manager.get_checkpoint(checkpoint_id)
-            if not latest_checkpoint:
-                return END
-
-            status = latest_checkpoint.status.value
-
-            if status == ExecutionStatus.WAITING_APPROVAL.value:
-                # Checkpoint waiting for approval - end this execution
-                # External API will call resume() after approve/reject
-                logger.info("Checkpoint waiting for approval, pausing execution")
-                return END
-
-            elif status == ExecutionStatus.APPROVED.value:
-                # Find next stage
-                for i, stage in enumerate(self._current_pipeline.stages):
-                    if stage.id == current_id and i + 1 < len(self._current_pipeline.stages):
-                        return self._current_pipeline.stages[i + 1].id
-                return END
-
-            elif status == ExecutionStatus.REJECTED.value:
-                # Rejected -> rollback and retry
-                return "rollback_handler"
-
-            return END
-
-        # Routing after rollback_handler
-        def rollback_routing(state: PipelineState) -> str:
-            """
-            After rollback, go back to current stage for re-execution.
-            """
-            current_id = state.get("current_stage_id")
-            if current_id:
-                return current_id
-            return END
-
-        # Build routing maps
-        checkpoint_routing_map = {s.id: s.id for s in pipeline.stages}
-        checkpoint_routing_map["rollback_handler"] = "rollback_handler"
-        checkpoint_routing_map[END] = END
-
-        rollback_routing_map = {s.id: s.id for s in pipeline.stages}
-        rollback_routing_map[END] = END
-
-        # Add conditional edges from checkpoint_handler
-        graph.add_conditional_edges(
-            "checkpoint_handler",
-            checkpoint_routing,
-            checkpoint_routing_map,
-        )
-
-        # Add conditional edges from rollback_handler
-        graph.add_conditional_edges(
-            "rollback_handler",
-            rollback_routing,
-            rollback_routing_map,
-        )
-
-        # Add edges based on checkpoint configuration
-        for i, stage in enumerate(pipeline.stages):
-            if i + 1 < len(pipeline.stages):
-                next_stage = pipeline.stages[i + 1]
-                if stage.is_checkpoint:
-                    # Checkpoint stages go through checkpoint_handler first
-                    graph.add_edge(stage.id, "checkpoint_handler")
-                else:
-                    graph.add_edge(stage.id, next_stage.id)
+                graph.add_node(stage_id, stage_node)
+                graph.add_node(f"{stage_id}_approval", approval_node)
             else:
-                # Last stage -> checkpoint_handler -> END
-                graph.add_edge(stage.id, "checkpoint_handler")
+                stage_node = self._make_stage_node(stage, stage_callback)
+                graph.add_node(stage_id, stage_node)
 
-        # Set entry point
+        edges = self._build_edges(pipeline)
+        for src, dst in edges:
+            graph.add_edge(src, dst)
+
         if pipeline.stages:
             graph.set_entry_point(pipeline.stages[0].id)
         else:
@@ -273,26 +89,63 @@ class PipelineEngine:
 
         return graph
 
+    def _build_edges(self, pipeline: Pipeline) -> list[tuple[str, str]]:
+        """Build edges for the graph."""
+        edges = []
+        for i, stage in enumerate(pipeline.stages):
+            if stage.is_checkpoint:
+                edges.append((stage.id, f"{stage.id}_approval"))
+                if i + 1 < len(pipeline.stages):
+                    edges.append((f"{stage.id}_approval", pipeline.stages[i + 1].id))
+                else:
+                    edges.append((f"{stage.id}_approval", END))
+            else:
+                if i + 1 < len(pipeline.stages):
+                    edges.append((stage.id, pipeline.stages[i + 1].id))
+                else:
+                    edges.append((stage.id, END))
+        return edges
+
+    def _make_stage_node(
+        self,
+        stage: PipelineStage,
+        stage_callback: Any,
+    ):
+        """Create a node function for stage execution."""
+        async def stage_node(state: PipelineState) -> dict[str, Any]:
+            return await self._execute_stage(stage, state, stage_callback)
+        return stage_node
+
+    def _make_approval_node(self, stage: PipelineStage):
+        """
+        Create a node function for checkpoint approval.
+
+        This follows the official LangGraph pattern:
+        1. interrupt() at the beginning (for pause)
+        2. Side effect (upsert_checkpoint) after interrupt
+        3. Command(goto=...) for routing
+        """
+        async def approval_node(state: PipelineState) -> Command[Literal]:
+            return await self._handle_approval(stage, state)
+        return approval_node
+
     async def _execute_stage(
         self,
         stage: PipelineStage,
         state: PipelineState,
-        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        stage_callback: Any = None,
     ) -> dict[str, Any]:
-        """Execute a single stage."""
+        """Execute a single stage (agent execution only)."""
         from datetime import datetime as dt
 
-        current_id = state.get("current_stage_id")
-
+        current_id = list(state.get("current_stage_id") or [])
         logger.info(
-            "Starting _execute_stage",
+            "Starting stage execution",
             stage_id=stage.id,
             stage_type=stage.stage_type.value,
-            current_state_status=state.get("status"),
             is_retry=stage.id == current_id,
         )
 
-        # Get agent for this stage
         agent = self.get_agent(stage.stage_type)
         if not agent:
             raise StageError(
@@ -300,20 +153,17 @@ class PipelineEngine:
                 details={"stage_id": stage.id, "stage_type": stage.stage_type.value},
             )
 
-        # Prepare input context
         context = self._prepare_stage_context(stage, state)
-
-        # If this is a retry (same stage as before), add the feedback to task
-        checkpoint_feedback = state.get("checkpoint_feedback", "")
         task = context["task"]
 
-        if checkpoint_feedback and stage.id == current_id:
-            logger.info(
-                "Adding checkpoint feedback to task",
-                stage_id=stage.id,
-                feedback_length=len(checkpoint_feedback),
-            )
-            task = f"""Previous attempt was rejected. Please review the feedback and revise your work accordingly:
+        if checkpoint_feedback := state.get("checkpoint_feedback"):
+            if stage.id == current_id:
+                logger.info(
+                    "Adding checkpoint feedback to task",
+                    stage_id=stage.id,
+                    feedback_length=len(checkpoint_feedback),
+                )
+                task = f"""Previous attempt was rejected. Please review the feedback and revise:
 
 === Rejection Feedback ===
 {checkpoint_feedback}
@@ -321,10 +171,8 @@ class PipelineEngine:
 
 Original Task:
 {task}"""
-            context["task"] = task
-            context["checkpoint_feedback"] = checkpoint_feedback
+                context["task"] = task
 
-        # Execute agent
         start_time = dt.utcnow()
         try:
             result = await agent.execute(
@@ -335,7 +183,6 @@ Original Task:
             end_time = dt.utcnow()
             duration = (end_time - start_time).total_seconds()
 
-            # Build stage result
             stage_result = StageResult(
                 stage_id=stage.id,
                 status=ExecutionStatus.COMPLETED,
@@ -346,11 +193,7 @@ Original Task:
                 duration_seconds=duration,
             )
 
-            logger.info(
-                "Stage completed",
-                stage_id=stage.id,
-                duration=duration,
-            )
+            logger.info("Stage completed", stage_id=stage.id, duration=duration)
 
         except Exception as e:
             end_time = dt.utcnow()
@@ -367,44 +210,23 @@ Original Task:
                 duration_seconds=duration,
             )
 
-        # Build new state - handle status based on checkpoint
-        new_status = ExecutionStatus.WAITING_APPROVAL if stage.is_checkpoint else ExecutionStatus.RUNNING
-
         new_state = {
-            "current_stage_id": stage.id,
-            "status": new_status,
-            f"result_{stage.id}": stage_result.model_dump(),
+            "current_stage_id": [stage.id],
+            "status": [ExecutionStatus.RUNNING],
+            f"result_{stage.id}": stage_result.model_dump(mode="json"),
         }
 
-        # Merge results
         results = dict(state.get("results", {}))
-        results[stage.id] = stage_result.model_dump()
+        results[stage.id] = stage_result.model_dump(mode="json")
         new_state["results"] = results
 
-        # Update stage history
         history = list(state.get("stage_history", []))
         if stage.id not in history:
             history.append(stage.id)
         new_state["stage_history"] = history
 
-        # Handle checkpoint creation - register with checkpoint_manager for API access
-        if stage.is_checkpoint:
-            checkpoint = checkpoint_manager.create_checkpoint(
-                execution_id=state["execution_id"],
-                stage_id=stage.id,
-                stage_result=stage_result,
-            )
-            # Also store in state for pipeline engine use
-            checkpoints = dict(state.get("checkpoints", {}))
-            checkpoints[stage.id] = checkpoint.model_dump()
-            new_state["checkpoints"] = checkpoints
-
         new_state["updated_at"] = dt.utcnow().isoformat()
 
-        # Clear checkpoint_feedback after using it (don't let it leak to other stages)
-        new_state["checkpoint_feedback"] = ""
-
-        # Trigger callback if provided
         if stage_callback:
             try:
                 stage_callback(stage.id, new_state)
@@ -412,6 +234,141 @@ Original Task:
                 logger.warning("Stage callback failed", stage_id=stage.id, error=str(e))
 
         return new_state
+
+    async def _handle_approval(
+        self,
+        stage: PipelineStage,
+        state: PipelineState,
+    ) -> Command[Literal]:
+        """
+        Handle checkpoint approval/rejection.
+
+        Follows official LangGraph interrupt pattern:
+        1. interrupt() is called first - pauses execution
+        2. On resume, interrupt() returns the approval data
+        3. upsert_checkpoint is called after interrupt (idempotent)
+        4. Command(goto=...) routes based on approval/rejection
+        """
+        from datetime import datetime as dt
+
+        stage_result = state.get("results", {}).get(stage.id)
+        if not stage_result:
+            raise StageError(
+                f"No result found for stage: {stage.id}",
+                details={"stage_id": stage.id},
+            )
+
+        interrupt_payload = {
+            "type": "checkpoint_approval",
+            "execution_id": state["execution_id"],
+            "stage_id": stage.id,
+            "stage_name": stage.name,
+            "stage_result": stage_result,
+        }
+
+        logger.info(
+            "Calling interrupt() for checkpoint approval",
+            stage_id=stage.id,
+        )
+
+        approval_data = interrupt(interrupt_payload)
+
+        logger.info(
+            "interrupt() returned",
+            stage_id=stage.id,
+            has_value=approval_data is not None,
+        )
+
+        stage_result_obj = StageResult(**stage_result)
+
+        checkpoint = checkpoint_manager.upsert_checkpoint(
+            execution_id=state["execution_id"],
+            stage_id=stage.id,
+            stage_result=stage_result_obj,
+        )
+
+        # 序列化 checkpoint 为 JSON 兼容的格式，避免状态合并冲突
+        checkpoint_dump = checkpoint.model_dump(mode="json")
+
+        new_state = {
+            "pending_checkpoint": checkpoint_dump,
+            "updated_at": dt.utcnow().isoformat(),
+        }
+
+        if not approval_data:
+            logger.info(
+                "No approval data (first call), waiting for resume",
+                stage_id=stage.id,
+            )
+            return {**new_state, "status": [ExecutionStatus.WAITING_APPROVAL]}
+
+        action = approval_data.get("action")
+        comment = approval_data.get("comment", "")
+        actor = approval_data.get("actor", "human")
+
+        logger.info(
+            "Processing approval decision",
+            stage_id=stage.id,
+            action=action,
+        )
+
+        if action == "approve":
+            checkpoint_manager.approve(
+                checkpoint_id=checkpoint.id,
+                approver=actor,
+                comment=comment,
+            )
+            logger.info(
+                "Checkpoint approved, proceeding to next stage",
+                stage_id=stage.id,
+                checkpoint_id=checkpoint.id,
+            )
+            return Command(
+                goto=END,
+                update={
+                    **new_state,
+                    "status": [ExecutionStatus.RUNNING],
+                    "pending_checkpoint": None,
+                    "checkpoint_status": "approved",
+                },
+            )
+
+        elif action == "reject":
+            checkpoint_manager.reject(
+                checkpoint_id=checkpoint.id,
+                rejector=actor,
+                comment=comment,
+            )
+            logger.info(
+                "Checkpoint rejected, will retry stage",
+                stage_id=stage.id,
+                checkpoint_id=checkpoint.id,
+            )
+            return Command(
+                goto=stage.id,
+                update={
+                    **new_state,
+                    "status": [ExecutionStatus.REJECTED],
+                    "checkpoint_feedback": comment,
+                    "pending_checkpoint": None,
+                    "checkpoint_status": "rejected",
+                },
+            )
+
+        else:
+            logger.warning(
+                "Unknown approval action, defaulting to approve",
+                action=action,
+            )
+            return Command(
+                goto=END,
+                update={
+                    **new_state,
+                    "status": [ExecutionStatus.RUNNING],
+                    "pending_checkpoint": None,
+                    "checkpoint_status": "approved",
+                },
+            )
 
     def _prepare_stage_context(
         self,
@@ -422,12 +379,10 @@ Original Task:
         task = ""
         context = dict(state.get("context", {}))
 
-        # Get previous stage results for context
         previous_results = []
         for s_result in state.get("results", {}).values():
             previous_results.append(s_result)
 
-        # Build task description based on stage type
         if stage.stage_type == StageType.DEMAND_ANALYSIS:
             task = f"Analyze the following demand and create a structured specification:\n\n{state.get('demand_input', '')}"
             context["previous_stages"] = []
@@ -454,46 +409,12 @@ Original Task:
 
         return {"task": task, "context": context}
 
-    async def _handle_checkpoint(self, state: PipelineState) -> dict[str, Any]:
-        """Handle checkpoint waiting for human approval."""
-        current_id = state.get("current_stage_id")
-        if not current_id:
-            return {}
-
-        checkpoint = state.get("checkpoints", {}).get(current_id)
-        if not checkpoint:
-            return {}
-
-        # Check approval status
-        if checkpoint.get("status") == ExecutionStatus.APPROVED.value:
-            return {"status": ExecutionStatus.RUNNING}
-        elif checkpoint.get("status") == ExecutionStatus.REJECTED.value:
-            return {
-                "status": ExecutionStatus.RUNNING,
-                "checkpoint_feedback": checkpoint.get("comment", ""),
-            }
-
-        # Still waiting
-        return {"status": ExecutionStatus.WAITING_APPROVAL}
-
-    def _is_checkpoint_approved(self, state: PipelineState) -> bool:
-        """Check if current checkpoint is approved."""
-        current_id = state.get("current_stage_id")
-        if not current_id:
-            return True
-
-        checkpoint = state.get("checkpoints", {}).get(current_id)
-        if not checkpoint:
-            return True
-
-        return checkpoint.get("status") == ExecutionStatus.APPROVED.value
-
     async def execute(
         self,
         pipeline: Pipeline,
         demand: str,
         execution_id: str | None = None,
-        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        stage_callback: Any = None,
     ) -> PipelineState:
         """Execute a pipeline with the given demand input."""
         execution_id = execution_id or str(uuid4())
@@ -504,47 +425,36 @@ Original Task:
             execution_id=execution_id,
         )
 
-        # Create initial state
         initial_state = create_initial_state(
             pipeline_id=pipeline.id,
             execution_id=execution_id,
             demand_input=demand,
         )
 
-        logger.info("Initial state created", initial_state=initial_state)
+        logger.info("Initial state created")
 
-        # Build graph if not cached (with callback if provided)
-        # Use pipeline.id as sole key for checkpointer to ensure resume() can find it
         cache_key = pipeline.id
         if cache_key not in self._compiled:
             graph = self.build_graph(pipeline, stage_callback)
-            # Use MemorySaver checkpointer for interrupt support
             checkpointer = MemorySaver()
             self._compiled[cache_key] = graph.compile(checkpointer=checkpointer)
             self._graphs[pipeline.id] = graph
-            self._checkpointers[cache_key] = checkpointer  # Save for resume
+            self._checkpointers[cache_key] = checkpointer
             logger.info("Graph built and compiled with checkpointer", pipeline_id=pipeline.id)
 
-        # Execute
         compiled_graph = self._compiled[cache_key]
-
-        # Config with thread_id for checkpointer to persist state
         config = {"configurable": {"thread_id": execution_id}}
 
         try:
-            # ainvoke executes the graph until checkpoint or completion
             result = await compiled_graph.ainvoke(initial_state, config)
 
-            # Check if execution reached a checkpoint (waiting for approval)
-            if result and result.get("status") == ExecutionStatus.WAITING_APPROVAL:
+            if result and ExecutionStatus.WAITING_APPROVAL in (result.get("status") or []):
                 logger.info(
-                    "Pipeline execution paused at checkpoint",
+                    "Pipeline paused at checkpoint",
                     pipeline_id=pipeline.id,
                     execution_id=execution_id,
-                    current_stage=result.get("current_stage_id"),
+                    current_stage=result.get("current_stage_id") or [],
                 )
-                # Return current state - caller can check for pending checkpoints
-                # External API will call resume() after approve/reject
                 return result
 
             logger.info(
@@ -573,10 +483,12 @@ Original Task:
         pipeline: Pipeline,
         demand: str,
         execution_id: str | None = None,
-        callback: Callable[[PipelineState], None] | None = None,
-        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        callback: Any = None,
+        stage_callback: Any = None,
     ) -> str:
         """Execute pipeline asynchronously, returns execution_id."""
+        import asyncio
+
         execution_id = execution_id or str(uuid4())
 
         async def run():
@@ -584,29 +496,20 @@ Original Task:
             if callback:
                 callback(result)
 
-        import asyncio
         asyncio.create_task(run())
-
         return execution_id
 
     async def resume(
         self,
         pipeline: Pipeline,
         execution_id: str,
-        resume_value: Any = None,
-        stage_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        resume_value: dict[str, Any] | None = None,
+        stage_callback: Any = None,
     ) -> PipelineState:
         """
-        Resume a paused pipeline execution after checkpoint approval/rejection.
+        Resume a paused pipeline execution.
 
-        Args:
-            pipeline: The pipeline being executed
-            execution_id: The execution ID (same as thread_id)
-            resume_value: Not used - approval status is read from checkpoint_manager
-            stage_callback: Optional callback for stage updates
-
-        Returns:
-            The final pipeline state after resume
+        Uses Command(resume=...) to pass approval data to interrupt().
         """
         logger.info(
             "Resuming pipeline execution",
@@ -615,85 +518,71 @@ Original Task:
             resume_value=resume_value,
         )
 
-        # Use the same checkpointer instance that was used for the initial run
         cache_key = pipeline.id
         checkpointer = self._checkpointers.get(cache_key)
+
         if not checkpointer:
-            logger.warning(
-                "Checkpointer not found, creating new one",
-                pipeline_id=pipeline.id,
-            )
+            logger.warning("Checkpointer not found, creating new one")
             checkpointer = MemorySaver()
 
-        graph = self.build_graph(pipeline, stage_callback)
-        compiled_graph = graph.compile(checkpointer=checkpointer)
+        if cache_key not in self._compiled:
+            graph = self.build_graph(pipeline, stage_callback)
+            compiled_graph = graph.compile(checkpointer=checkpointer)
+            self._compiled[cache_key] = compiled_graph
+            self._checkpointers[cache_key] = checkpointer
+        else:
+            compiled_graph = self._compiled[cache_key]
 
-        # Config with same thread_id to resume from saved state
         config = {"configurable": {"thread_id": execution_id}}
 
-        # Resume execution - force starting from checkpoint_handler to check approval status
-        result = {}
-        async for chunk in compiled_graph.astream(
-            Command(goto="checkpoint_handler"),
-            config,
-        ):
-            logger.info("[astream CHUNK]", chunk=chunk)
-            
-            # Aggregate all chunk data into result
-            if isinstance(chunk, dict):
-                for node_name, node_data in chunk.items():
-                    if node_name in ("checkpoint_handler", "rollback_handler", "__end__"):
-                        # These nodes return status updates, merge into result
-                        if isinstance(node_data, dict):
-                            result.update(node_data)
-                    else:
-                        # Stage node - this is what we need for callback
+        result = None
+        try:
+            async for chunk in compiled_graph.astream(Command(resume=resume_value), config):
+                logger.debug("[astream CHUNK]", chunk=chunk)
+
+                if isinstance(chunk, dict):
+                    for node_name, node_data in chunk.items():
+                        if node_name == "__end__":
+                            continue
+
                         if isinstance(node_data, dict) and stage_callback:
                             try:
                                 stage_callback(node_name, node_data)
-                                logger.info("Stage callback triggered via resume", node_name=node_name)
                             except Exception as e:
-                                logger.warning("Stage callback failed in resume", node_name=node_name, error=str(e))
-                        # Also aggregate stage results
-                        if isinstance(node_data, dict):
-                            for key, value in node_data.items():
-                                if key not in result or key in ("results", "checkpoints"):
-                                    result[key] = value
+                                logger.warning("Stage callback failed", node_name=node_name, error=str(e))
 
-        # Also read the latest state directly from checkpointer to ensure we have the most up-to-date data
-        try:
-            saved_state = checkpointer.get(config)
-            if saved_state and saved_state.get("channel_values"):
-                channel_values = saved_state["channel_values"]
-                # Merge checkpoint data if available
-                if "checkpoints" in channel_values and isinstance(channel_values["checkpoints"], dict):
-                    result["checkpoints"] = channel_values["checkpoints"]
-                if "results" in channel_values and isinstance(channel_values["results"], dict):
-                    result["results"] = channel_values["results"]
-                if "current_stage_id" in channel_values:
-                    result["current_stage_id"] = channel_values["current_stage_id"]
-                if "status" in channel_values:
-                    result["status"] = channel_values["status"]
-                logger.info("Read latest state from checkpointer", 
-                           results_keys=list(channel_values.get("results", {}).keys()) if isinstance(channel_values.get("results"), dict) else [])
+                        if isinstance(node_data, dict):
+                            result = node_data
+
+            if result is None:
+                final_state = compiled_graph.get_state(config)
+                if final_state and final_state.values:
+                    result = final_state.values
+
         except Exception as e:
-            logger.warning("Failed to read state from checkpointer", error=str(e))
+            logger.error(
+                "Pipeline resume failed",
+                pipeline_id=pipeline.id,
+                execution_id=execution_id,
+                error=str(e),
+            )
+            raise PipelineError(
+                f"Pipeline resume failed: {e}",
+                details={"pipeline_id": pipeline.id, "execution_id": execution_id},
+            )
 
         logger.info(
-            "Pipeline execution resumed and completed",
+            "Pipeline resumed",
             pipeline_id=pipeline.id,
             execution_id=execution_id,
-            status=result.get("status"),
-            results_keys=list(result.get("results", {}).keys()) if isinstance(result.get("results"), dict) else [],
+            status=result.get("status") if isinstance(result, dict) else None,
         )
 
-        return result
+        return result if isinstance(result, dict) else {}
 
     def get_execution_status(self, execution_id: str) -> PipelineState | None:
         """Get current status of an execution (from cache)."""
-        # In a real implementation, this would query the database
         return None
 
 
-# Global engine instance
 pipeline_engine = PipelineEngine()

@@ -1,6 +1,7 @@
 """Pipeline State definition for LangGraph."""
 
-from typing import Any, TypedDict
+import operator
+from typing import Annotated, Any, List, TypedDict
 
 from devflow.models.pipeline import PipelineStatus
 from devflow.models.execution import ExecutionStatus, StageResult, Checkpoint
@@ -13,8 +14,8 @@ class PipelineState(TypedDict, total=False):
     pipeline_id: str
     execution_id: str
 
-    # Current execution status
-    status: ExecutionStatus
+    # Current execution status - uses list with add reducer to handle concurrent updates
+    status: Annotated[List[ExecutionStatus], operator.add]
 
     # Execution context (shared across all stages)
     demand_input: str
@@ -23,12 +24,15 @@ class PipelineState(TypedDict, total=False):
     # Stage results keyed by stage_id
     results: dict[str, StageResult]
 
-    # Current stage tracking
-    current_stage_id: str | None
+    # Current stage tracking - uses last-wins reducer to handle concurrent updates
+    current_stage_id: Annotated[List[str], operator.add]
     stage_history: list[str]
 
     # Checkpoints
     checkpoints: dict[str, Checkpoint]
+
+    # Pending checkpoint info (for interrupt handling, avoids recreating on resume)
+    pending_checkpoint: dict[str, Any] | None
 
     # Checkpoint handling (set by checkpoint_handler)
     checkpoint_status: str  # Current checkpoint status
@@ -60,13 +64,14 @@ def create_initial_state(
     return PipelineState(
         pipeline_id=pipeline_id,
         execution_id=execution_id,
-        status=ExecutionStatus.PENDING,
+        status=[ExecutionStatus.PENDING],
         demand_input=demand_input,
         context={"demand": demand_input},
         results={},
-        current_stage_id=None,
+        current_stage_id=[],
         stage_history=[],
         checkpoints={},
+        pending_checkpoint=None,
         checkpoint_status="",
         rejection_comment="",
         checkpoint_feedback="",

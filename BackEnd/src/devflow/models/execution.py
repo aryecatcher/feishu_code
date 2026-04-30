@@ -92,7 +92,7 @@ class Execution(BaseModel):
 
     id: str = Field(description="Unique execution identifier")
     pipeline_id: str = Field(description="Pipeline ID")
-    status: ExecutionStatus = Field(default=ExecutionStatus.PENDING)
+    status: list[ExecutionStatus] = Field(default_factory=list)
     context: dict[str, Any] = Field(
         default_factory=dict,
         description="Shared execution context",
@@ -105,7 +105,7 @@ class Execution(BaseModel):
         default_factory=dict,
         description="Checkpoints keyed by stage_id",
     )
-    current_stage_id: str | None = Field(default=None)
+    current_stage_id: list[str] = Field(default_factory=list)
     error: str | None = Field(default=None, description="Error message if execution failed")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -129,6 +129,6 @@ class Execution(BaseModel):
 
     def get_current_checkpoint(self) -> Checkpoint | None:
         """Get checkpoint for current stage if exists."""
-        if self.current_stage_id:
-            return self.checkpoints.get(self.current_stage_id)
+        if self.current_stage_id and len(self.current_stage_id) > 0:
+            return self.checkpoints.get(self.current_stage_id[0])
         return None

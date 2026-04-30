@@ -124,8 +124,8 @@ class ExecutionResponse(BaseResponse):
 
     id: str
     pipeline_id: str
-    status: ExecutionStatus
-    current_stage_id: str | None
+    status: list[ExecutionStatus]
+    current_stage_id: list[str]
     results: dict[str, Any] = Field(default_factory=dict)
     checkpoints: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
@@ -139,7 +139,7 @@ class ExecutionStatusResponse(BaseResponse):
     id: str
     pipeline_id: str
     status: ExecutionStatus
-    current_stage_id: str | None
+    current_stage_id: list[str]
     current_stage_name: str | None
     progress: float = Field(description="Progress percentage 0-100")
     results: dict[str, Any]

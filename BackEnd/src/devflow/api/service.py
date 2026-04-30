@@ -161,9 +161,9 @@ class PipelineService:
         execution = Execution(
             id=execution_id,
             pipeline_id=pipeline_id,
-            status=ExecutionStatus.PENDING,
+            status=[ExecutionStatus.PENDING],
             context={"demand": demand, "config": config or {}},
-            current_stage_id=pipeline.stages[0].id if pipeline.stages else None,
+            current_stage_id=[pipeline.stages[0].id] if pipeline.stages else [],
         )
 
         self._executions[execution_id] = execution
@@ -203,8 +203,8 @@ class PipelineService:
 
         # Get current stage name
         current_stage_name = None
-        if execution.current_stage_id:
-            stage = pipeline.get_stage(execution.current_stage_id)
+        if execution.current_stage_id and len(execution.current_stage_id) > 0:
+            stage = pipeline.get_stage(execution.current_stage_id[0])
             if stage:
                 current_stage_name = stage.name
 
@@ -212,7 +212,7 @@ class PipelineService:
             "id": execution.id,
             "pipeline_id": execution.pipeline_id,
             "status": execution.status.value,
-            "current_stage_id": execution.current_stage_id,
+            "current_stage_id": list(execution.current_stage_id or []),
             "current_stage_name": current_stage_name,
             "progress": progress,
             "results": {

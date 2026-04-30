@@ -85,10 +85,10 @@ class Pipeline(BaseModel):
                 return stage
         return None
 
-    def get_next_stage(self, current_stage_id: str) -> PipelineStage | None:
+    def get_next_stage(self, current_stage_id: list[str]) -> PipelineStage | None:
         """Get the next stage after the current one."""
         for i, stage in enumerate(self.stages):
-            if stage.id == current_stage_id and i + 1 < len(self.stages):
+            if stage.id == current_stage_id[0] and i + 1 < len(self.stages):
                 return self.stages[i + 1]
         return None
 

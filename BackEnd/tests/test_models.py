@@ -145,7 +145,7 @@ class TestExecutionModels:
         )
 
         assert execution.id == "test-execution"
-        assert execution.status == ExecutionStatus.PENDING
+        assert execution.status == [ExecutionStatus.PENDING]
 
     def test_execution_add_result(self):
         """Test adding stage results."""

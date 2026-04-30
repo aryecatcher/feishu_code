@@ -53,8 +53,8 @@ def sync_execution_from_engine(
                 execution.checkpoints[stage_id] = Checkpoint(**cp_data)
 
     # 同步 current_stage_id
-    if engine_result.get("current_stage_id"):
-        execution.current_stage_id = engine_result["current_stage_id"]
+    if engine_result.get("current_stage_id") and len(engine_result["current_stage_id"]) > 0:
+        execution.current_stage_id = list(engine_result["current_stage_id"])
 
     # 同步 status
     result_status = engine_result.get("status")
@@ -73,7 +73,7 @@ def sync_execution_from_engine(
     logger.info(
         "Execution state synced from engine",
         execution_id=execution_id,
-        current_stage=execution.current_stage_id,
+        current_stage=list(execution.current_stage_id or []),
         status=execution.status.value,
         results_count=len(execution.results),
         checkpoints_count=len(execution.checkpoints),
@@ -141,44 +141,56 @@ async def approve_checkpoint(
     - **approver**: 审批人标识（默认 "human"）
 
     批准后流水线将继续执行下一阶段。
+    
+    使用 LangGraph interrupt() 模式：
+    1. 直接调用 engine.resume() 传入审批数据
+    2. engine 内部处理状态更新和回滚逻辑
     """
     from devflow.core.engine import pipeline_engine
 
     try:
-        checkpoint = pipeline_service.approve_checkpoint(
-            execution_id=execution_id,
-            stage_id=stage_id,
-            comment=data.comment,
-            approver=data.approver,
-        )
-
-        # Resume the interrupted pipeline execution
+        # 获取 pipeline 信息
         execution = pipeline_service.get_execution(execution_id)
         pipeline = pipeline_service.get_pipeline(execution.pipeline_id)
 
-        # 同步当前状态（resume 前的状态）
-        sync_execution_from_engine(execution_id, {
-            "current_stage_id": execution.current_stage_id,
-            "results": {k: v.model_dump() for k, v in execution.results.items()},
-            "checkpoints": {k: v.model_dump() for k, v in execution.checkpoints.items()},
-            "status": ExecutionStatus.WAITING_APPROVAL.value,
-        })
+        # 准备审批数据（传递给 interrupt()）
+        approval_data = {
+            "action": "approve",
+            "comment": data.comment,
+            "approver": data.approver,
+            "stage_id": stage_id,
+        }
 
-        # 直接 await resume（不放在后台任务中），确保同步完成后返回
+        # 调用 resume，engine 内部会更新 checkpoint 状态和处理回滚
         logger.info("Resuming pipeline after approval", execution_id=execution_id, stage_id=stage_id)
-        engine_result = await pipeline_engine.resume(pipeline, execution_id, resume_value="approved")
+        engine_result = await pipeline_engine.resume(
+            pipeline, 
+            execution_id, 
+            resume_value=approval_data
+        )
 
         # 同步 Engine 执行结果到 Execution
         sync_execution_from_engine(execution_id, engine_result)
 
-        # 重新获取 checkpoint 返回最新状态
-        updated_checkpoint = pipeline_service.get_pending_checkpoints(execution_id)
-        for cp in updated_checkpoint:
+        # 获取检查点状态
+        checkpoint = pipeline_service.get_pending_checkpoints(execution_id)
+        for cp in checkpoint:
             if cp["stage_id"] == stage_id:
                 return CheckpointResponse(**cp)
 
-        # 如果没有待审批的 checkpoint，返回更新后的状态
-        return CheckpointResponse(**checkpoint)
+        # 如果没有待审批的 checkpoint（可能已通过或回滚），返回空响应
+        return CheckpointResponse(
+            id="",
+            execution_id=execution_id,
+            stage_id=stage_id,
+            stage_result={},
+            status=ExecutionStatus.APPROVED,
+            created_at=execution.updated_at,
+            decided_at=datetime.utcnow(),
+            decided_by=data.approver,
+            comment=data.comment,
+            approval_action="approved",
+        )
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
@@ -200,44 +212,56 @@ async def reject_checkpoint(
     - **rejector**: 拒绝人标识（默认 "human"）
 
     拒绝后将触发回滚流程。
+    
+    使用 LangGraph interrupt() 模式：
+    1. 直接调用 engine.resume() 传入拒绝数据
+    2. engine 内部会清除当前阶段结果并准备重新执行
     """
     from devflow.core.engine import pipeline_engine
 
     try:
-        checkpoint = pipeline_service.reject_checkpoint(
-            execution_id=execution_id,
-            stage_id=stage_id,
-            comment=data.comment,
-            rejector=data.rejector,
-        )
-
-        # Resume the interrupted pipeline execution to trigger rollback
+        # 获取 pipeline 信息
         execution = pipeline_service.get_execution(execution_id)
         pipeline = pipeline_service.get_pipeline(execution.pipeline_id)
 
-        # 同步当前状态（resume 前的状态）
-        sync_execution_from_engine(execution_id, {
-            "current_stage_id": execution.current_stage_id,
-            "results": {k: v.model_dump() for k, v in execution.results.items()},
-            "checkpoints": {k: v.model_dump() for k, v in execution.checkpoints.items()},
-            "status": ExecutionStatus.WAITING_APPROVAL.value,
-        })
+        # 准备拒绝数据（传递给 interrupt()）
+        rejection_data = {
+            "action": "reject",
+            "comment": data.comment,
+            "approver": data.rejector,
+            "stage_id": stage_id,
+        }
 
-        # 直接 await resume，确保同步完成后返回
+        # 调用 resume，engine 内部会处理回滚逻辑
         logger.info("Resuming pipeline after rejection", execution_id=execution_id, stage_id=stage_id)
-        engine_result = await pipeline_engine.resume(pipeline, execution_id, resume_value="rejected")
+        engine_result = await pipeline_engine.resume(
+            pipeline, 
+            execution_id, 
+            resume_value=rejection_data
+        )
 
         # 同步 Engine 执行结果到 Execution
         sync_execution_from_engine(execution_id, engine_result)
 
-        # 重新获取 checkpoint 返回最新状态
-        updated_checkpoint = pipeline_service.get_pending_checkpoints(execution_id)
-        for cp in updated_checkpoint:
+        # 获取检查点状态
+        checkpoint = pipeline_service.get_pending_checkpoints(execution_id)
+        for cp in checkpoint:
             if cp["stage_id"] == stage_id:
                 return CheckpointResponse(**cp)
 
-        # 如果没有待审批的 checkpoint（回滚后重试），返回更新后的状态
-        return CheckpointResponse(**checkpoint)
+        # 如果回滚后重试，可能没有待审批的 checkpoint
+        return CheckpointResponse(
+            id="",
+            execution_id=execution_id,
+            stage_id=stage_id,
+            stage_result={},
+            status=ExecutionStatus.REJECTED,
+            created_at=execution.updated_at,
+            decided_at=datetime.utcnow(),
+            decided_by=data.rejector,
+            comment=data.comment,
+            approval_action="rejected",
+        )
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
