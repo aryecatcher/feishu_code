@@ -19,6 +19,11 @@ class SimpleAgent(BaseAgent):
     - Delivery preparation
     """
 
+    @property
+    def system_prompt(self) -> str:
+        """Return the system prompt, using config prompt if available."""
+        return self.config.system_prompt or "You are a helpful AI assistant."
+
     async def execute(
         self,
         task: str,

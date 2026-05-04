@@ -10,6 +10,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_deepseek import ChatDeepSeek
 
 from devflow.utils.config import settings
 from devflow.utils.logging import get_logger
@@ -62,9 +63,8 @@ class LangChainLLM:
         """Get base URL for OpenAI-compatible APIs."""
         if self._base_url:
             return self._base_url
-        # DeepSeek is OpenAI-compatible
-        if "deepseek" in self._model.lower():
-            return "https://api.deepseek.com"
+        # Only set base_url for non-DeepSeek OpenAI-compatible APIs
+        # DeepSeek uses ChatDeepSeek with built-in endpoint
         return None
 
     def _create_llm(self) -> Any:
@@ -75,12 +75,11 @@ class LangChainLLM:
         if not api_key:
             logger.warning(f"No API key for {self.provider}")
 
-        # Use OpenAI client for DeepSeek (OpenAI-compatible)
-        if base_url or "deepseek" in self._model.lower():
-            return ChatOpenAI(
+        # Use ChatDeepSeek for DeepSeek provider (supports strict structured output)
+        if self.provider == "deepseek":
+            return ChatDeepSeek(
                 api_key=api_key,
                 model=self._model,
-                base_url=base_url,
                 **self._extra_kwargs,
             )
         elif self.provider == "openai":

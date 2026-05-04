@@ -94,11 +94,11 @@ class TestPipelineModels:
             stages=stages,
         )
 
-        next_stage = pipeline.get_next_stage("stage-1")
+        next_stage = pipeline.get_next_stage(["stage-1"])
         assert next_stage is not None
         assert next_stage.id == "stage-2"
 
-        next_stage = pipeline.get_next_stage("stage-2")
+        next_stage = pipeline.get_next_stage(["stage-2"])
         assert next_stage is None
 
     def test_pipeline_get_checkpoint_stages(self):

@@ -92,7 +92,10 @@ class Execution(BaseModel):
 
     id: str = Field(description="Unique execution identifier")
     pipeline_id: str = Field(description="Pipeline ID")
-    status: list[ExecutionStatus] = Field(default_factory=list)
+    status: list[ExecutionStatus] = Field(
+        default_factory=lambda: [ExecutionStatus.PENDING],
+        description="Execution status",
+    )
     context: dict[str, Any] = Field(
         default_factory=dict,
         description="Shared execution context",

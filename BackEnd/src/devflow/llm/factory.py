@@ -1,5 +1,7 @@
 """LLM Provider factory using LangChain."""
 
+from typing import Any
+
 from devflow.llm.langchain_llm import LangChainLLM, LLMResponse
 from devflow.utils.logging import get_logger
 from devflow.utils.exceptions import LLMError
@@ -151,6 +153,25 @@ class LLMManager:
     @property
     def fallback_provider(self) -> LangChainLLM | None:
         return self._fallback
+
+    def get_langchain_llm(self, use_fallback: bool = False) -> Any:
+        """
+        获取底层的 LangChain LLM 实例，用于 with_structured_output 等操作。
+
+        Args:
+            use_fallback: 是否使用 fallback provider
+
+        Returns:
+            底层的 LangChain LLM 实例 (ChatOpenAI, ChatAnthropic 等)
+        """
+        from langchain_core.language_models import BaseChatModel
+
+        provider = self._fallback if use_fallback else self._primary
+
+        if provider is None:
+            raise LLMError("No LLM provider configured")
+
+        return provider.llm
 
 
 # Global LLM manager instance
