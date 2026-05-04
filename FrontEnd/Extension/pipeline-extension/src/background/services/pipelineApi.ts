@@ -1,77 +1,128 @@
+/* 数据模型 */
+// PipelineStage - Pipeline阶段信息
 export interface PipelineStage {
-  id: string;
-  name: string;
-  status: 'pending' | 'running' | 'success' | 'failed';
-  startTime?: number;
-  endTime?: number;
+  stageId: string;
+  name?: string;
+  description?: string;
 }
-
-export interface PipelineStatus {
+// ExecutionStatus - 执行状态信息
+export interface ExecutionStatus {
   pipelineId: string;
-  name: string;
+  executionId: string;
   status: 'idle' | 'running' | 'success' | 'failed';
-  stages: PipelineStage[];
+  currentStageId?: string;
   totalDuration?: number;
   lastUpdated: number;
 }
-
-export interface SubmitPromptRequest {
-  prompt: string;
-  taskId: string;
+// PipelineStatus - Pipeline模板信息
+export interface PipelineStatus {
+  pipelineId: string;
+  name?: string;
+  description?: string;
+  stages: PipelineStage[];
 }
-
-export interface SubmitPromptResponse {
-  success: boolean;
-  taskId: string;
-  message?: string;
+// Checkpoint - 检查点信息
+export interface CheckpointStatus {
+  executionId: string;
+  checkpointId: string;
+  reviews?: string[];
+  action: 'accept' | 'reject';
+  prompt?: string;
 }
-
+// StartTaskRequest - 启动任务信息
+export interface StartTaskRequest {
+  pipelineId: string;
+  sourceData?: string;
+  prompt?: string;
+}
 class PipelineApiService {
   private baseUrl = 'https://api.example.com/pipeline';
-  private apiKey?: string;
 
-  setApiConfig(apiKey: string, baseUrl?: string) {
-    this.apiKey = apiKey;
+  setApiConfig(baseUrl?: string) {
     if (baseUrl) {
       this.baseUrl = baseUrl;
     }
   }
 
-  async getPipelineStatus(pipelineId: string): Promise<PipelineStatus> {
-    if (!this.apiKey) {
-      throw new Error('API key not configured');
-    }
-
-    const response = await fetch(`${this.baseUrl}/status/${pipelineId}`, {
+  // GetPipelines - 获取Pipeline列表
+  async getPipelines(): Promise<PipelineStatus[]> {
+    const response = await fetch(`${this.baseUrl}/api/pipelines`, {
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch pipeline status: ${response.statusText}`);
+      throw new Error(`Failed to fetch pipeline list: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.items || [];
+  }
+
+  // GetPipelineConfig - 获取指定Pipeline的配置
+  async getPipelineConfig(pipelineId: string): Promise<PipelineStatus> {
+    const response = await fetch(`${this.baseUrl}/api/pipelines/${pipelineId}`, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch pipeline config: ${response.statusText}`);
     }
 
     return response.json();
   }
 
-  async submitPrompt(request: SubmitPromptRequest): Promise<SubmitPromptResponse> {
-    if (!this.apiKey) {
-      throw new Error('API key not configured');
-    }
-
-    const response = await fetch(`${this.baseUrl}/submit-prompt`, {
+  // StartTask - 启动新任务
+  async startTask(request: StartTaskRequest): Promise<ExecutionStatus> {
+    const response = await fetch(`${this.baseUrl}/api/executions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(request)
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to submit prompt: ${response.statusText}`);
+      throw new Error(`Failed to start task: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // CheckpointPrompt - 提交检查点反馈
+  async checkpointPrompt(request: CheckpointStatus): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: request.action,
+        reviews: request.reviews,
+        prompt: request.prompt
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to process checkpoint: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // GetTaskState - 获取当前任务状态
+  async getTaskState(executionId: string): Promise<ExecutionStatus> {
+    const response = await fetch(`${this.baseUrl}/api/executions/${executionId}`, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task state: ${response.statusText}`);
     }
 
     return response.json();

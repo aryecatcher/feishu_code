@@ -1,34 +1,44 @@
-import { PipelineStatus } from '../services/pipelineApi';
+import { ExecutionStatus, StartTaskRequest, CheckpointStatus } from '../services/pipelineApi';
 
 export interface AppConfig {
-  apiKey: string;
-  baseUrl?: string;
-  autoRefresh: boolean;
-  refreshInterval: number;
+  serviceUrl: string;       // 服务端URL
+  pipelineIdList: string[]; // Pipeline列表
+  autoRefresh: boolean;     // 自动刷新开关
+  refreshInterval: number;  // 刷新间隔（毫秒）
+  lastUpdated: number;      // 最后更新时间
 }
 
 export interface TaskState {
-  currentTaskId?: string;
-  pipelineStatus?: PipelineStatus;
-  isRunning: boolean;
-  lastError?: string;
-  lastUpdated: number;
+  senderTabId?: number;
+  startTaskRequest?: StartTaskRequest;
+  checkpointStatus?: CheckpointStatus;
+  executionStatus: ExecutionStatus;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
-  apiKey: '',
-  autoRefresh: true,
-  refreshInterval: 30000
+  serviceUrl: '',
+  pipelineIdList: [],
+  autoRefresh: true,        // 默认开启
+  refreshInterval: 30000,   // 默认30秒刷新一次
+  lastUpdated: 0
 };
 
 const DEFAULT_STATE: TaskState = {
-  isRunning: false,
-  lastUpdated: Date.now()
+  executionStatus: {
+    pipelineId: 'null',
+    executionId: 'null',
+    status: 'idle',
+    currentStageId: undefined,
+    totalDuration: undefined,
+    lastUpdated: Date.now()
+  }
 };
+
+
 
 class AppStore {
   private config: AppConfig = { ...DEFAULT_CONFIG };
-  private state: TaskState = { ...DEFAULT_STATE };
+  private taskState: TaskState = { ...DEFAULT_STATE };
   private listeners: Set<() => void> = new Set();
 
   async init() {
@@ -44,7 +54,7 @@ class AppStore {
     }
     
     if (result.taskState) {
-      this.state = { ...DEFAULT_STATE, ...result.taskState };
+      this.taskState = { ...DEFAULT_STATE, ...result.taskState };
     }
     
     this.notifyListeners();
@@ -54,10 +64,16 @@ class AppStore {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local') {
         if (changes.appConfig) {
-          this.config = { ...DEFAULT_CONFIG, ...changes.appConfig.newValue };
+          const newValue = changes.appConfig.newValue;
+          // 类型校验：确保是对象才展开，否则使用空对象兜底
+          const configValue = typeof newValue === 'object' && newValue !== null ? newValue : {};
+          this.config = { ...DEFAULT_CONFIG, ...configValue };
         }
         if (changes.taskState) {
-          this.state = { ...DEFAULT_STATE, ...changes.taskState.newValue };
+          const newValue = changes.taskState.newValue;
+          // 类型校验：确保是对象才展开，否则使用空对象兜底
+          const stateValue = typeof newValue === 'object' && newValue !== null ? newValue : {};
+          this.taskState = { ...DEFAULT_STATE, ...stateValue };
         }
         this.notifyListeners();
       }
@@ -75,18 +91,18 @@ class AppStore {
   }
 
   getState(): TaskState {
-    return { ...this.state };
+    return { ...this.taskState };
   }
 
   async updateState(state: Partial<TaskState>) {
-    this.state = { ...this.state, ...state, lastUpdated: Date.now() };
-    await chrome.storage.local.set({ taskState: this.state });
+    this.taskState = { ...this.taskState, ...state};
+    await chrome.storage.local.set({ taskState: this.taskState });
     this.notifyListeners();
   }
 
   async resetState() {
-    this.state = { ...DEFAULT_STATE, lastUpdated: Date.now() };
-    await chrome.storage.local.set({ taskState: this.state });
+    this.taskState = { ...DEFAULT_STATE };
+    await chrome.storage.local.set({ taskState: this.taskState });
     this.notifyListeners();
   }
 
