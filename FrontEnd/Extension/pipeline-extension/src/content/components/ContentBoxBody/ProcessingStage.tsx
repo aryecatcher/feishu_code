@@ -1,4 +1,5 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react'
+import { useDAG, DAGNode, DAGEdge } from '../../hooks/useDAG'
 import './ProcessingStage.css'
 
 // 按钮组件Props定义
@@ -78,9 +79,27 @@ const PromptInput: React.FC<PromptInputProps> = ({
 
 // DAG渲染区域组件
 const DagRenderer: React.FC<DagRendererProps> = ({ className = '' }) => {
+  // 模拟DAG数据
+  const nodes: DAGNode[] = [
+    { id: '1', label: '数据收集', status: 'success' },
+    { id: '2', label: '模型处理', status: 'running' },
+    { id: '3', label: '结果输出', status: 'pending' },
+  ]
+
+  const edges: DAGEdge[] = [
+    { from: '1', to: '2' },
+    { from: '2', to: '3' },
+  ]
+
+  const { DAGComponent } = useDAG(nodes, edges, {
+    onNodeClick: (node) => {
+      console.log('点击了DAG节点:', node)
+    }
+  })
+
   return (
-    <div className={`dag-renderer ${className}`}>
-      <p className="dag-renderer-text">这里应该是DAG渲染区域</p>
+    <div className={`dag-renderer ${className}`} onMouseDown={(e) => e.stopPropagation()}>
+      <DAGComponent />
     </div>
   )
 }

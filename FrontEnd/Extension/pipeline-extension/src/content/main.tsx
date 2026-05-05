@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 
-console.log('[CRXJS] User defined content script loaded!')
+console.log('[CRXJS] Content script loaded!')
 
 const container = document.createElement('div')
 container.id = 'crxjs-app'

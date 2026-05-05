@@ -156,6 +156,7 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
             <PromptInputStage
               onSubmit={async (prompt) => {
                 console.log('提交的prompt:', prompt)
+                switchToProcessing()
                 try {
                   // 带重试机制的消息发送，解决background未初始化问题
                   let response = null
