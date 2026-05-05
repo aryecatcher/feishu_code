@@ -36,7 +36,7 @@ export interface StartTaskRequest {
   prompt?: string;
 }
 class PipelineApiService {
-  private baseUrl = 'https://api.example.com/pipeline';
+  private baseUrl = 'http://60.204.174.188:8000';
 
   setApiConfig(baseUrl?: string) {
     if (baseUrl) {

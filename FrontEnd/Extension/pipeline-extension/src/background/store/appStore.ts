@@ -48,35 +48,39 @@ class AppStore {
   }
 
   private async loadFromStorage() {
-    const result = await chrome.storage.local.get(['appConfig', 'tasks']);
-    
-    if (result.appConfig) {
-      this.config = { ...DEFAULT_CONFIG, ...result.appConfig };
-    }
-    
-    if (result.tasks) {
-      this.tasks = {...DEFAULT_TASK_STATE, ...result.tasks};
+    if (chrome?.storage?.local) {
+      const result = await chrome.storage.local.get(['appConfig', 'tasks']);
+      
+      if (result.appConfig) {
+        this.config = { ...DEFAULT_CONFIG, ...result.appConfig };
+      }
+      
+      if (result.tasks) {
+        this.tasks = {...DEFAULT_TASK_STATE, ...result.tasks};
+      }
     }
     
     this.notifyListeners();
   }
 
   private setupStorageChangeListener() {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local') {
-        if (changes.appConfig) {
-          const newValue = changes.appConfig.newValue;
-          const configValue = typeof newValue === 'object' && newValue !== null ? newValue : {};    // 确保newValue是对象
-          this.config = { ...DEFAULT_CONFIG, ...configValue };
+    if (chrome?.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local') {
+          if (changes.appConfig) {
+            const newValue = changes.appConfig.newValue;
+            const configValue = typeof newValue === 'object' && newValue !== null ? newValue : {};    // 确保newValue是对象
+            this.config = { ...DEFAULT_CONFIG, ...configValue };
+          }
+          if (changes.tasks) {
+            const newValue = changes.tasks.newValue;
+            const tasksValue = typeof newValue === 'object' && newValue !== null ? newValue : {};
+            this.tasks = { ...DEFAULT_TASK_STATE, ...tasksValue }
+          }
+          this.notifyListeners();
         }
-        if (changes.tasks) {
-          const newValue = changes.tasks.newValue;
-          const tasksValue = typeof newValue === 'object' && newValue !== null ? newValue : {};
-          this.tasks = { ...DEFAULT_TASK_STATE, ...tasksValue }
-        }
-        this.notifyListeners();
-      }
-    });
+      });
+    }
   }
 
   getConfig(): AppConfig {
@@ -85,7 +89,9 @@ class AppStore {
 
   async updateConfig(config: Partial<AppConfig>) {
     this.config = { ...this.config, ...config };
-    await chrome.storage.local.set({ appConfig: this.config });
+    if (chrome?.storage?.local) {
+      await chrome.storage.local.set({ appConfig: this.config });
+    }
     this.notifyListeners();
   }
 
@@ -189,7 +195,9 @@ class AppStore {
 
   // 持久化任务到存储
   private async persistTasks() {
-    await chrome.storage.local.set({ tasks: this.tasks });
+    if (chrome?.storage?.local) {
+      await chrome.storage.local.set({ tasks: this.tasks });
+    }
   }
 
   // -------------------------- 兼容原有API --------------------------

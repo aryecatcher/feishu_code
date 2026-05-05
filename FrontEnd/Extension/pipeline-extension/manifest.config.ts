@@ -23,5 +23,9 @@ export default defineManifest({
     matches: ['https://*/*'], // 匹配需要注入的网站地址，可根据需求调整
     run_at: 'document_end', // 🟢 推荐添加：页面加载完成后注入
   }],
+  background: {
+    service_worker: 'src/background/main.ts', // background service worker入口
+    type: 'module' // 配置为ES Module类型，适配项目模块化方案
+  },
   host_permissions: ['https://*/*', 'http://*/*']
 })

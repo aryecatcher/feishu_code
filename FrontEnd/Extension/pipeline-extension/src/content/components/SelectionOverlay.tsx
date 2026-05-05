@@ -46,7 +46,7 @@ export default function SelectionOverlay({ onSelectEnd }: SelectionOverlayProps)
       setIsSelecting(false)
       const { left, top, right, bottom } = selectionRect
       if (right - left > 5 && bottom - top > 5) {
-        onSelectEnd(startPosRef.current, { x: right, y: bottom })
+        onSelectEnd({ x: left, y: top }, { x: right, y: bottom })
       }
     }
 
