@@ -25,8 +25,8 @@ export interface PipelineStatus {
 export interface CheckpointStatus {
   executionId: string;
   checkpointId: string;
-  reviews?: string[];
-  action: 'accept' | 'reject';
+  reviews: string;
+  action?: 'accept' | 'reject';
   prompt?: string;
 }
 // StartTaskRequest - 启动任务信息
@@ -76,7 +76,7 @@ class PipelineApiService {
   }
 
   // StartTask - 启动新任务
-  async startTask(request: StartTaskRequest): Promise<ExecutionStatus> {
+  async startTask(request: StartTaskRequest): Promise<any> {
     const response = await fetch(`${this.baseUrl}/api/executions`, {
       method: 'POST',
       headers: {
@@ -92,29 +92,66 @@ class PipelineApiService {
     return response.json();
   }
 
-  // CheckpointPrompt - 提交检查点反馈
-  async checkpointPrompt(request: CheckpointStatus): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/approve`, {
-      method: 'POST',
+  // GetCheckpoint - 获取待审批检查点信息
+  async getCheckpoint(executionId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/checkpoints/${executionId}`, {
       headers: {
         'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        action: request.action,
-        reviews: request.reviews,
-        prompt: request.prompt
-      })
+      }
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to process checkpoint: ${response.statusText}`);
+      throw new Error(`Failed to fetch checkpoint list: ${response.statusText}`);
     }
 
     return response.json();
   }
 
+  // CheckpointPrompt - 提交检查点反馈
+  async checkpointPrompt(request: CheckpointStatus): Promise<any> {
+    if (request.action==='accept') {
+      const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: request.action,
+          reviews: request.reviews,
+          prompt: request.prompt
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to process checkpoint: ${response.statusText}`);
+      }
+      return response.json();
+    }
+    else if (request.action==='reject') {
+      const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: request.action,
+          reviews: request.reviews,
+          prompt: request.prompt
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to process checkpoint: ${response.statusText}`);
+      }
+      return response.json();
+    }
+    else {
+      throw new Error(`Invalid action: ${request.action}`);
+    }
+  }
+
   // GetTaskState - 获取当前任务状态
-  async getTaskState(executionId: string): Promise<ExecutionStatus> {
+  async getTaskState(executionId: string): Promise<any> {
     const response = await fetch(`${this.baseUrl}/api/executions/${executionId}`, {
       headers: {
         'Content-Type': 'application/json'
