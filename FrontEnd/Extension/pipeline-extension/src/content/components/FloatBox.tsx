@@ -23,7 +23,7 @@ export default function FloatBox({ onActivate }: FloatBoxProps) {
         top: `${position.y}px`,
       }}
     >
-      AI
+      框!
     </div>
   )
 }

@@ -9,7 +9,7 @@ export interface AppConfig {
 }
 
 export interface TaskState {
-  senderTabId: number;
+  senderTabId?: number;
   startTaskRequest?: StartTaskRequest;
   checkpoints: CheckpointStatus[];
   executionStatus: ExecutionStatus;
@@ -19,7 +19,7 @@ const DEFAULT_CONFIG: AppConfig = {
   serviceUrl: '',
   pipelineIdList: [],
   autoRefresh: true,        // 默认开启
-  refreshInterval: 30000,   // 默认30秒刷新一次
+  refreshInterval: 10000,   // 默认10秒刷新一次
   lastUpdated: 0
 };
 
@@ -28,7 +28,7 @@ const DEFAULT_TASK_STATE: Omit<TaskState, 'senderTabId'> = {
   executionStatus: {
     pipelineId: 'null',
     executionId: 'null',
-    status: 'idle',
+    status: 'pending',
     currentStageId: undefined,
     totalDuration: undefined,
     lastUpdated: Date.now()

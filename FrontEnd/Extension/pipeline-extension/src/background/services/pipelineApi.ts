@@ -9,7 +9,7 @@ export interface PipelineStage {
 export interface ExecutionStatus {
   pipelineId: string;
   executionId: string;
-  status: 'idle' | 'running' | 'success' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'approved' | 'rejected' | 'cancelled';
   currentStageId?: string;
   totalDuration?: number;
   lastUpdated: number;
@@ -44,11 +44,12 @@ class PipelineApiService {
     }
   }
 
-  // GetPipelines - 获取Pipeline列表
-  async getPipelines(): Promise<PipelineStatus[]> {
-    const response = await fetch(`${this.baseUrl}/api/pipelines`, {
+  // GetPipelines - 获取Pipeline列表（仅获取1页10个Pipeline）
+  async getPipelines(): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/pipelines?page=1&page_size=10`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'accept': 'application/json'
       }
     });
 
@@ -60,11 +61,29 @@ class PipelineApiService {
     return data.items || [];
   }
 
-  // GetPipelineConfig - 获取指定Pipeline的配置
-  async getPipelineConfig(pipelineId: string): Promise<PipelineStatus> {
-    const response = await fetch(`${this.baseUrl}/api/pipelines/${pipelineId}`, {
+  // GetDefaultPipeline - 获取默认Pipeline
+  async getDefaultPipeline(): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/pipelines/default`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch default pipeline: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.items || {};
+  }
+
+  // GetPipelineConfig - 获取指定Pipeline的配置
+  async getPipelineConfig(pipelineId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/pipelines/${pipelineId}`, {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json'
       }
     });
 
@@ -80,6 +99,7 @@ class PipelineApiService {
     const response = await fetch(`${this.baseUrl}/api/executions`, {
       method: 'POST',
       headers: {
+        'accept': 'application/json',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(request)
@@ -93,15 +113,16 @@ class PipelineApiService {
   }
 
   // GetCheckpoint - 获取待审批检查点信息
-  async getCheckpoint(executionId: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/api/checkpoints/${executionId}`, {
+  async getCheckpoint(executionId: string, stageId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/checkpoints/${executionId}/${stageId}`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'accept': 'application/json'
       }
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch checkpoint list: ${response.statusText}`);
+      throw new Error(`Failed to fetch checkpoint details: ${response.statusText}`);
     }
 
     return response.json();
@@ -113,17 +134,17 @@ class PipelineApiService {
       const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/approve`, {
         method: 'POST',
         headers: {
+          'accept': 'application/json',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          action: request.action,
-          reviews: request.reviews,
-          prompt: request.prompt
+          comment: request.prompt as string,
+          approver: 'human'
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to process checkpoint: ${response.statusText}`);
+        throw new Error(`Failed to process checkpoint approval: ${response.statusText}`);
       }
       return response.json();
     }
@@ -131,17 +152,17 @@ class PipelineApiService {
       const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/reject`, {
         method: 'POST',
         headers: {
+          'accept': 'application/json',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          action: request.action,
-          reviews: request.reviews,
-          prompt: request.prompt
+          comment: request.prompt as string,
+          rejector: 'human'
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to process checkpoint: ${response.statusText}`);
+        throw new Error(`Failed to process checkpoint rejection: ${response.statusText}`);
       }
       return response.json();
     }
@@ -153,8 +174,9 @@ class PipelineApiService {
   // GetTaskState - 获取当前任务状态
   async getTaskState(executionId: string): Promise<any> {
     const response = await fetch(`${this.baseUrl}/api/executions/${executionId}`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'accept': 'application/json'
       }
     });
 

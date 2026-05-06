@@ -4,6 +4,7 @@ import { appStore, AppConfig } from '../store/appStore';
 
 export type MessageType = 
   | 'GET_PIPELINES'
+  | 'GET_DEFAULT_PIPELINE'
   | 'GET_PIPELINE_CONFIG'
   | 'GET_APP_CONFIG'
   | 'UPDATE_APP_CONFIG'
@@ -38,6 +39,9 @@ class MessageHandler {
       switch (message.type) {
         case 'GET_PIPELINES':
           return this.handleGetPipelines(sendResponse);
+        
+        case 'GET_DEFAULT_PIPELINE':
+          return this.handleGetDefaultPipeline(sendResponse);
         
         case 'GET_PIPELINE_CONFIG':
           return this.handleGetPipelineConfig(message.payload, sendResponse);
@@ -85,6 +89,15 @@ class MessageHandler {
     sendResponse({
       success: true,
       data: pipelines
+    });
+  }
+  
+  // GetDefaultPipeline - 获取默认Pipeline
+  private async handleGetDefaultPipeline(sendResponse: (response: MessageResponse) => void) {
+    const defaultPipeline = await pipelineApi.getDefaultPipeline();
+    sendResponse({
+      success: true,
+      data: defaultPipeline
     });
   }
 
@@ -137,7 +150,7 @@ class MessageHandler {
         executionStatus: {
           pipelineId: result.pipeline_id as string,
           executionId: result.id as string,
-          status: result.status as 'idle' | 'running' | 'success' | 'failed',
+          status: result.status as 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'approved' | 'rejected' | 'cancelled',
           currentStageId: result.current_stage_id as string,
           totalDuration: result.total_duration as number,
           lastUpdated: Date.now()
@@ -152,8 +165,9 @@ class MessageHandler {
   }
 
   // GetCheckpoint - 获取待审批检查点信息
-  private async handleGetCheckpoint(executionId: string, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
-    const result = await pipelineApi.getCheckpoint(executionId);
+  private async handleGetCheckpoint(message: { executionId: string, stageId: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
+    const { executionId, stageId } = message;
+    const result = await pipelineApi.getCheckpoint(executionId, stageId);
 
     // 创建检查点状态
     await appStore.addCheckpointToTask(sender.tab?.id as number, 
@@ -235,7 +249,7 @@ class MessageHandler {
       await appStore.updateTask(senderTabId, 
         {
           executionStatus: {
-            status: state.status as 'idle' | 'running' | 'success' | 'failed',
+            status: state.status as 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'approved' | 'rejected' | 'cancelled',
             currentStageId: state.current_stage_id as string,
             lastUpdated: Date.now()
           }

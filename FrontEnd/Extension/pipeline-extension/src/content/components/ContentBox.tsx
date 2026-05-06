@@ -73,17 +73,17 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
       const tagName = el.tagName.toUpperCase()
       if (!semanticWhitelist.has(tagName)) return false
 
-      // 2. 视图检测：中心点在框内
+      // // 2. 视图检测：中心点(弃)
       const rect = el.getBoundingClientRect()
-      const centerX = rect.left + rect.width / 2
-      const centerY = rect.top + rect.height / 2
-      const isCenterInSelection = centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY
-      if (!isCenterInSelection) return false
+      // const centerX = rect.left + rect.width / 2
+      // const centerY = rect.top + rect.height / 2
+      // const isCenterInSelection = centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY
+      // if (!isCenterInSelection) return false
 
       // 3. 面积比例检查：排除极小或极大元素
       const elArea = rect.width * rect.height
       const areaRatio = elArea / selectionArea
-      if (areaRatio < 0.01 || areaRatio > 3) return false // 小于1%或大于3倍选框面积则排除
+      if (areaRatio < 0.01 || areaRatio > 5) return false // 小于1%或大于5倍选框面积则排除
 
       return true
     })
@@ -91,8 +91,8 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
     // 提取源码位置
     const locations = new Set<string>()
     filteredElements.forEach(el => {
-      // 优先提取data-source属性
-      const dataSource = el.getAttribute('data-source')
+      // 优先提取data-source-loc属性
+      const dataSource = el.getAttribute('data-source-loc')
       if (dataSource) {
         locations.add(dataSource)
       }
@@ -260,44 +260,44 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
             <PromptInputStage
               onSubmit={async (prompt) => {
                 console.log('提交的prompt:', prompt)
-                switchToProcessing()
-              //   try {
-              //     // 带重试机制的消息发送，解决background未初始化问题
-              //     let response = null
-              //     let retryCount = 0
-              //     const maxRetries = 3
+                try {
+                  // 带重试机制的消息发送
+                  let response = null
+                  let retryCount = 0
+                  const maxRetries = 3
                   
-              //     while (retryCount < maxRetries) {
-              //       try {
-              //         response = await chrome.runtime.sendMessage({
-              //           type: 'START_TASK',
-              //           payload: {
-              //             pipelineId: 'default', // 默认pipeline，可根据实际需求修改
-              //             prompt: prompt
-              //           }
-              //         })
-              //         break
-              //       } catch (err) {
-              //         retryCount++
-              //         if (retryCount >= maxRetries) throw err
-              //         // 重试间隔500ms，等待background初始化
-              //         await new Promise(resolve => setTimeout(resolve, 500))
-              //       }
-              //     }
+                  while (retryCount < maxRetries) {
+                    try {
+                      response = await chrome.runtime.sendMessage({
+                        type: 'START_TASK',
+                        payload: {
+                          pipelineId: 'default', // 默认pipeline
+                          prompt: prompt
+                        }
+                      })
+                      break
+                    } catch (err) {
+                      retryCount++
+                      if (retryCount >= maxRetries) throw err
+                      // 重试间隔500ms，等待background初始化
+                      await new Promise(resolve => setTimeout(resolve, 500))
+                    }
+                  }
                   
-              //     if (response && response.success) {
-              //       console.log('任务启动成功:', response.data)
-              //       // 切换到处理中页面
-              //       switchToProcessing()
-              //     } else {
-              //       console.error('任务启动失败:', response?.error || '未知错误')
-              //       // 可在此处添加错误提示逻辑
-              //     }
-              //   } catch (error) {
-              //     console.error('发送消息失败:', error)
-              //     // 可在此处添加错误提示逻辑
-              //     alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
-              //   }
+                  if (response && response.success) {
+                    console.log('任务启动成功:', response.data)
+                    // 切换到处理中页面
+                    switchToProcessing()
+                  } else {
+                    console.error('任务启动失败:', response?.error || '未知错误')
+                    // 可在此处添加错误提示逻辑
+                  }
+                } catch (error) {
+                  console.error('发送消息失败:', error)
+                  // 可在此处添加错误提示逻辑
+                  alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
+                  switchToProcessing()
+                }
               }
             }
               placeholder="请输入你的需求..."

@@ -18,7 +18,7 @@ import dagre from '@dagrejs/dagre';
 export interface DAGNode extends Record<string, unknown> {
   id: string;
   label: string;
-  status: 'success' | 'failed' | 'running' | 'pending';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'approved' | 'rejected' | 'cancelled';
 }
 
 type CustomNodeType = Node<DAGNode, 'custom'>;
@@ -34,14 +34,14 @@ export interface UseDAGOptions {
 
 const getStatusColor = (status: DAGNode['status']) => {
   switch (status) {
-    case 'success':
+    case 'completed':
       return '#52c41a';
     case 'failed':
       return '#ff4d4f';
     case 'running':
-      return '#1890ff';
-    case 'pending':
-      return '#d9d9d9';
+      return '#1874ffff';
+    case 'waiting_approval':
+      return '#ff6a00ff';
     default:
       return '#d9d9d9';
   }
