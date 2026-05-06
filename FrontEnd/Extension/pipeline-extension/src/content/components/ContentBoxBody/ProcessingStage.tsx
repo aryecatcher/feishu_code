@@ -84,11 +84,15 @@ const DagRenderer: React.FC<DagRendererProps> = ({ className = '' }) => {
     { id: '1', label: '数据收集', status: 'success' },
     { id: '2', label: '模型处理', status: 'running' },
     { id: '3', label: '结果输出', status: 'pending' },
+    { id: '4', label: '模型评估', status: 'success' },
+    { id: '5', label: '模型部署', status: 'pending' },
   ]
 
   const edges: DAGEdge[] = [
     { from: '1', to: '2' },
     { from: '2', to: '3' },
+    { from: '3', to: '4' },
+    { from: '4', to: '5' },
   ]
 
   const { DAGComponent } = useDAG(nodes, edges, {

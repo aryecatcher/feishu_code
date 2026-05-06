@@ -32,8 +32,9 @@ export function useDrag(initial: UseDragPosition, options: Options = {}) {
 
         const onMouseDown = (e: MouseEvent) => {        // 鼠标按下事件，记录拖拽开始时的坐标
             const target = e.target as HTMLElement
-            // 如果点击的是交互元素（输入框、按钮等），不触发拖拽
-            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON' || target.closest('input, textarea, button')) {
+            // 如果点击的是交互元素（输入框、按钮等）或标记为no-drag的区域，不触发拖拽
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON' || 
+                target.closest('input, textarea, button, .no-drag')) {
                 return
             }
             e.preventDefault()

@@ -20,8 +20,112 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
   // 页面状态管理
   const [stage, setStage] = useState<StageType>('PromptInput')
   // 窗口尺寸状态
-  const [boxSize, setBoxSize] = useState({ width: 320, height: 620 })
+  const [boxSize, _setBoxSize] = useState({ width: 320, height: 620 })
   const contentRef = useRef<HTMLDivElement>(null)
+  // 选中区域内的DOM元素列表
+  const [_selectedElements, _setSelectedElements] = useState<Element[]>([])
+  // 源码位置列表
+  const [_sourceLocations, _setSourceLocations] = useState<string[]>([])
+
+  // 获取选中区域的所有数据：DOM元素列表和源码位置
+  const getSelectionData = React.useCallback(() => {
+    const { start, end } = selectPos
+    const minX = Math.min(start.x, end.x)
+    const maxX = Math.max(start.x, end.x)
+    const minY = Math.min(start.y, end.y)
+    const maxY = Math.max(start.y, end.y)
+    
+    const elements = new Set<Element>()
+    
+    // 步长设置为10px，平衡性能和检测精度
+    const step = 10
+    
+    // 遍历矩形区域内的点，收集所有元素
+    for (let x = minX; x <= maxX; x += step) {
+      for (let y = minY; y <= maxY; y += step) {
+        const pointElements = document.elementsFromPoint(x, y)
+        pointElements.forEach(el => elements.add(el))
+      }
+    }
+    
+    // 计算选框基础参数
+    const selectionWidth = maxX - minX
+    const selectionHeight = maxY - minY
+    const selectionArea = selectionWidth * selectionHeight
+    
+    // 语义白名单：包含有价值语义的标签
+    const semanticWhitelist = new Set([
+      'BUTTON', 'P', 'A', 'IMG', 'INPUT', 'TEXTAREA', 'SELECT',
+      'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'LI', 'UL', 'OL',
+      'TABLE', 'TR', 'TD', 'TH', 'DIV', 'SECTION', 'ARTICLE', 
+      'HEADER', 'FOOTER', 'NAV', 'FORM', 'LABEL', 'VIDEO', 'AUDIO', 'CANVAS'
+    ])
+
+    // 转换为数组并过滤掉我们自己添加的选择框和内容窗口元素
+    const filteredElements = Array.from(elements).filter(el => 
+      !el.classList.contains('selection-rect-final') && 
+      !el.classList.contains('content-box') &&
+      !el.closest('.content-box')
+    )
+    // 遴选逻辑：排除无意义元素
+    .filter(el => {
+      // 1. 语义白名单检查：只保留有价值语义的标签
+      const tagName = el.tagName.toUpperCase()
+      if (!semanticWhitelist.has(tagName)) return false
+
+      // 2. 视图检测：中心点在框内
+      const rect = el.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      const isCenterInSelection = centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY
+      if (!isCenterInSelection) return false
+
+      // 3. 面积比例检查：排除极小或极大元素
+      const elArea = rect.width * rect.height
+      const areaRatio = elArea / selectionArea
+      if (areaRatio < 0.01 || areaRatio > 3) return false // 小于1%或大于3倍选框面积则排除
+
+      return true
+    })
+    
+    // 提取源码位置
+    const locations = new Set<string>()
+    filteredElements.forEach(el => {
+      // 优先提取data-source属性
+      const dataSource = el.getAttribute('data-source')
+      if (dataSource) {
+        locations.add(dataSource)
+      }
+      // 可以添加其他属性的提取逻辑，比如data-src、data-file等
+      const otherSourceAttrs = ['data-src', 'data-file', 'data-path', 'src']
+      otherSourceAttrs.forEach(attr => {
+        const value = el.getAttribute(attr)
+        if (value && !value.startsWith('http') && !value.startsWith('data:')) {
+          locations.add(value)
+        }
+      })
+    })
+    
+    const sourceLocations = Array.from(locations)
+    
+    // 更新状态
+    _setSelectedElements(filteredElements)
+    _setSourceLocations(sourceLocations)
+    
+    // 同时返回元素和位置
+    return {
+      elements: filteredElements,
+      locations: sourceLocations
+    }
+  }, [selectPos])
+
+  // 组件加载时获取选中区域的元素和源码位置
+  React.useEffect(() => {
+    const { elements, locations } = getSelectionData()
+    
+    console.log('选中区域内的DOM元素:', elements)
+    console.log('提取到的源码位置:', locations)
+  }, [getSelectionData])
 
   // 切换页面函数
   const switchToPromptInput = () => setStage('PromptInput')
@@ -157,44 +261,45 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
               onSubmit={async (prompt) => {
                 console.log('提交的prompt:', prompt)
                 switchToProcessing()
-                try {
-                  // 带重试机制的消息发送，解决background未初始化问题
-                  let response = null
-                  let retryCount = 0
-                  const maxRetries = 3
+              //   try {
+              //     // 带重试机制的消息发送，解决background未初始化问题
+              //     let response = null
+              //     let retryCount = 0
+              //     const maxRetries = 3
                   
-                  while (retryCount < maxRetries) {
-                    try {
-                      response = await chrome.runtime.sendMessage({
-                        type: 'START_TASK',
-                        payload: {
-                          pipelineId: 'default', // 默认pipeline，可根据实际需求修改
-                          prompt: prompt
-                        }
-                      })
-                      break
-                    } catch (err) {
-                      retryCount++
-                      if (retryCount >= maxRetries) throw err
-                      // 重试间隔500ms，等待background初始化
-                      await new Promise(resolve => setTimeout(resolve, 500))
-                    }
-                  }
+              //     while (retryCount < maxRetries) {
+              //       try {
+              //         response = await chrome.runtime.sendMessage({
+              //           type: 'START_TASK',
+              //           payload: {
+              //             pipelineId: 'default', // 默认pipeline，可根据实际需求修改
+              //             prompt: prompt
+              //           }
+              //         })
+              //         break
+              //       } catch (err) {
+              //         retryCount++
+              //         if (retryCount >= maxRetries) throw err
+              //         // 重试间隔500ms，等待background初始化
+              //         await new Promise(resolve => setTimeout(resolve, 500))
+              //       }
+              //     }
                   
-                  if (response && response.success) {
-                    console.log('任务启动成功:', response.data)
-                    // 切换到处理中页面
-                    switchToProcessing()
-                  } else {
-                    console.error('任务启动失败:', response?.error || '未知错误')
-                    // 可在此处添加错误提示逻辑
-                  }
-                } catch (error) {
-                  console.error('发送消息失败:', error)
-                  // 可在此处添加错误提示逻辑
-                  alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
-                }
-              }}
+              //     if (response && response.success) {
+              //       console.log('任务启动成功:', response.data)
+              //       // 切换到处理中页面
+              //       switchToProcessing()
+              //     } else {
+              //       console.error('任务启动失败:', response?.error || '未知错误')
+              //       // 可在此处添加错误提示逻辑
+              //     }
+              //   } catch (error) {
+              //     console.error('发送消息失败:', error)
+              //     // 可在此处添加错误提示逻辑
+              //     alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
+              //   }
+              }
+            }
               placeholder="请输入你的需求..."
               submitText="提交"
             />

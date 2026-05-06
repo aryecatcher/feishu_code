@@ -10,6 +10,7 @@ import {
   useEdgesState,
   NodeTypes,
   NodeProps,
+  PanOnScrollMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
@@ -52,14 +53,14 @@ const CustomNode = ({ data, selected }: NodeProps<CustomNodeType>) => {
   return (
     <div
       style={{
-        padding: '10px 16px',
+        padding: '10px',
         border: `2px solid ${statusColor}`,
         borderRadius: '8px',
         backgroundColor: '#fff',
-        minWidth: '120px',
+        minWidth: '50px',
         textAlign: 'center',
-        boxShadow: selected ? '0 0 0 2px rgba(24, 144, 255, 0.2)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
-        transition: 'all 0.2s ease',
+        boxShadow: selected ? `0 0 2px 3px ${statusColor}` : '0 2px 5px rgba(0, 0, 0, 0.1)',
+        transition: 'all 1s ease',
         position: 'relative',
       }}
     >
@@ -87,10 +88,14 @@ const dagreGraph = new dagre.graphlib.Graph();
 dagreGraph.setDefaultEdgeLabel(() => ({}));
 
 const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
-  dagreGraph.setGraph({ rankdir: direction, nodesep: 50, ranksep: 100 });
+  dagreGraph.setGraph({
+      rankdir: direction,
+      nodesep: 30,
+      ranksep: 30,
+    });
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: 150, height: 60 });
+    dagreGraph.setNode(node.id, { width: 60, height: 40 });
   });
 
   edges.forEach((edge) => {
@@ -104,8 +109,8 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     return {
       ...node,
       position: {
-        x: nodeWithPosition.x - 150 / 2,
-        y: nodeWithPosition.y - 60 / 2,
+        x: nodeWithPosition.x - 60 / 2,
+        y: nodeWithPosition.y - 40 / 2,
       },
     };
   });
@@ -158,7 +163,7 @@ export const useDAG = (
 
   const DAGComponent = useCallback(() => {
     return (
-      <div style={{ width: '100%', height: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
+      <div className="no-drag" style={{ width: '100%', height: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
         <div style={{ minWidth: 'max-content', height: '100%' }}>
           <ReactFlow
             nodes={reactFlowNodes}
@@ -166,10 +171,10 @@ export const useDAG = (
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={handleNodeClick}
-            onMouseDown={(e) => e.stopPropagation()}
             nodeTypes={nodeTypes}
-            panOnDrag={false}
-            zoomOnScroll={false}
+            panOnDrag={true}
+            panOnScroll={true}
+            panOnScrollMode={PanOnScrollMode.Horizontal}
             zoomOnPinch={false}
             zoomOnDoubleClick={false}
             nodesDraggable={false}
