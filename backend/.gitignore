@@ -133,3 +133,6 @@ Thumbs.db
 # Project specific
 devflow.db
 *.sqlite
+
+# node_modules
+node_modules/
