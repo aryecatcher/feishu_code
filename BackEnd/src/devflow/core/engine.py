@@ -15,6 +15,7 @@ from devflow.agents.base import BaseAgent, AgentResult
 from devflow.utils.logging import get_logger
 from devflow.utils.exceptions import PipelineError, StageError
 from devflow.core.checkpoint import checkpoint_manager
+from devflow.core.context import CodeContextBuilder
 
 logger = get_logger("engine")
 
@@ -411,6 +412,25 @@ Original Task:
         """Prepare context for a stage execution."""
         task = ""
         context = dict(state.get("context", {}))
+        repo_path = context.get("repo_path", "")
+        focus_files = context.get("focus_files", [])
+
+        # Read focus files and add to code_context
+        if focus_files and repo_path:
+            context_builder = CodeContextBuilder(repo_path=repo_path)
+            # Extract file paths from focus_files list (support both dict and string)
+            file_paths = []
+            for f in focus_files:
+                if isinstance(f, dict):
+                    file_paths.append(f.get("path", ""))
+                else:
+                    file_paths.append(str(f))
+            file_paths = [p for p in file_paths if p]
+            
+            if file_paths:
+                logger.info("Reading focus files for context", repo_path=repo_path, files=file_paths)
+                code_context = context_builder.build_file_context(file_paths)
+                context["code_context"] = code_context
 
         previous_results = []
         for s_result in state.get("results", {}).values():
@@ -447,6 +467,7 @@ Original Task:
         pipeline: Pipeline,
         demand: str,
         execution_id: str | None = None,
+        context: dict[str, Any] | None = None,
         stage_callback: Any = None,
     ) -> PipelineState:
         """Execute a pipeline with the given demand input."""
@@ -463,6 +484,11 @@ Original Task:
             execution_id=execution_id,
             demand_input=demand,
         )
+
+        # Merge provided context into initial state
+        if context:
+            logger.info("Merging context into initial state", context_keys=list(context.keys()))
+            initial_state["context"].update(context)
 
         logger.info("Initial state created")
 

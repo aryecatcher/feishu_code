@@ -20,12 +20,24 @@ logger = get_logger("api.execution")
 router = APIRouter(prefix="/executions", tags=["Execution"])
 
 
-async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None:
+async def run_pipeline(
+    execution_id: str,
+    pipeline_id: str,
+    demand: str,
+    context: dict[str, Any] | None = None,
+) -> None:
     """后台任务：运行流水线"""
     import traceback
     from devflow.models.execution import ExecutionStatus, StageResult, Checkpoint
 
     logger.info("run_pipeline started", execution_id=execution_id, pipeline_id=pipeline_id)
+
+    # 记录 context 信息
+    repo_path = context.get("repo_path") if context else None
+    focus_files = context.get("focus_files") if context else None
+    if repo_path or focus_files:
+        focus_files_first = focus_files[0] if focus_files else None
+        logger.info("Pipeline context prepared", repo_path=repo_path, focus_files=focus_files, focus_files_first=focus_files_first)
 
     try:
         # 更新状态为 running
@@ -62,6 +74,7 @@ async def run_pipeline(execution_id: str, pipeline_id: str, demand: str) -> None
             pipeline,
             demand,
             execution_id=execution_id,
+            context=context,
             stage_callback=sync_stage_callback,
         )
 
@@ -113,6 +126,7 @@ async def create_execution(
     - **pipeline_id**: 流水线ID（使用 "default" 使用默认流水线）
     - **demand**: 需求描述
     - **config**: 执行配置（可选）
+    - **context**: 执行上下文（可选），包含 repo_path 和 focus_files
 
     执行会异步启动，可以通过返回的 ID 追踪执行状态。
     """
@@ -129,6 +143,7 @@ async def create_execution(
             execution.id,
             data.pipeline_id,
             data.demand,
+            data.context,
         )
 
         return ExecutionResponse(

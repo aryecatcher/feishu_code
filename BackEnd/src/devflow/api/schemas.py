@@ -106,6 +106,10 @@ class ExecutionCreate(BaseModel):
         default_factory=dict,
         description="Execution configuration",
     )
+    context: dict[str, Any] | None = Field(
+        default=None,
+        description="Execution context including repo_path and focus_files",
+    )
 
 
 class TestRunRequest(BaseModel):
