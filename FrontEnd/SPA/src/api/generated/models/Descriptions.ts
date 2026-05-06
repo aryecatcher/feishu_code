@@ -1,0 +1,18 @@
+/* generated using openapi-typescript-codegen -- do not edit */
+/* istanbul ignore file */
+/* tslint:disable */
+/* eslint-disable */
+/**
+ * ?��??���?o????��?��???????-????��?�㨨����?��????
+ */
+export type Descriptions = {
+    /**
+     * ����|???
+     */
+    content?: (string | null);
+    /**
+     * ???����?
+     */
+    title: string;
+};
+
