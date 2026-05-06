@@ -12,7 +12,7 @@ export default defineManifest({
     default_icon: {
       48: 'public/logo.png',
     },
-    default_popup: 'src/popup/index.html', // popup配置页面入口
+    // default_popup: 'src/popup/index.html', // popup配置页面入口
   },
   permissions: [
     'activeTab', // 🟢 推荐添加：访问当前激活标签页权限
@@ -20,7 +20,7 @@ export default defineManifest({
   ],
   content_scripts: [{
     js: ['src/content/main.tsx'], // 页面注入脚本入口，用于实现悬浮窗
-    matches: ['https://*/*'], // 匹配需要注入的网站地址，可根据需求调整
+    matches: ['https://*/*', 'http://*/*'], // 匹配需要注入的网站地址，可根据需求调整
     run_at: 'document_end', // 🟢 推荐添加：页面加载完成后注入
   }],
   background: {

@@ -10,13 +10,14 @@ interface ContentBoxProps {
     end: UseDragPosition
   }
   onClose: () => void
+  isRefresh?: boolean
 }
 
 type StageType = 'PromptInput' | 'Processing'
 
 const GAP = 10
 
-export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
+export default function ContentBox({ selectPos, onClose, isRefresh = false }: ContentBoxProps) {
   // 页面状态管理
   const [stage, setStage] = useState<StageType>('PromptInput')
   // 窗口尺寸状态
@@ -91,17 +92,29 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
     // 提取源码位置
     const locations = new Set<string>()
     filteredElements.forEach(el => {
-      // 优先提取data-source-loc属性
-      const dataSource = el.getAttribute('data-source-loc')
-      if (dataSource) {
-        locations.add(dataSource)
+      // 提取data-source-loc属性（JSON格式）
+      const dataSourceLoc = el.getAttribute('data-source-loc')
+      if (dataSourceLoc) {
+        try {
+          // 解析JSON格式的source-loc，提取path字段
+          const locData = JSON.parse(dataSourceLoc)
+          if (locData.path && typeof locData.path === 'string') {
+            locations.add(locData.path.trim())
+          }
+        } catch (e) {
+          // 解析失败时，如果是直接的路径字符串也直接添加
+          if (typeof dataSourceLoc === 'string' && dataSourceLoc.trim() && !dataSourceLoc.startsWith('http') && !dataSourceLoc.startsWith('data:')) {
+            locations.add(dataSourceLoc.trim())
+          }
+        }
       }
-      // 可以添加其他属性的提取逻辑，比如data-src、data-file等
-      const otherSourceAttrs = ['data-src', 'data-file', 'data-path', 'src']
+      
+      // 提取其他常见的源码路径属性
+      const otherSourceAttrs = ['data-source', 'data-src', 'data-file', 'data-path', 'src']
       otherSourceAttrs.forEach(attr => {
         const value = el.getAttribute(attr)
-        if (value && !value.startsWith('http') && !value.startsWith('data:')) {
-          locations.add(value)
+        if (value && typeof value === 'string' && value.trim() && !value.startsWith('http') && !value.startsWith('data:')) {
+          locations.add(value.trim())
         }
       })
     })
@@ -127,9 +140,101 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
     console.log('提取到的源码位置:', locations)
   }, [getSelectionData])
 
+  // 如果是刷新模式，直接跳转到处理阶段
+  React.useEffect(() => {
+    if (isRefresh) {
+      switchToProcessing()
+    }
+  }, [isRefresh])
+
   // 切换页面函数
-  const switchToPromptInput = () => setStage('PromptInput')
+  // const switchToPromptInput = () => setStage('PromptInput')// 切换页面函数
   const switchToProcessing = () => setStage('Processing')
+
+  // 处理Prompt提交
+  const handleSubmit = async (prompt: string) => {
+    console.log('提交的prompt:', prompt)
+    try {
+      // 带重试机制的消息发送
+      let response = null
+      let retryCount = 0
+      const maxRetries = 3
+      
+      while (retryCount < maxRetries) {
+        try {
+          response = await chrome.runtime.sendMessage({
+            type: 'START_TASK',
+            payload: {
+              pipelineId: 'default', // 默认pipeline
+              sourcePath: _sourceLocations,
+              prompt: prompt
+            }
+          })
+          break
+        } catch (err) {
+          retryCount++
+          if (retryCount >= maxRetries) throw err
+          // 重试间隔500ms，等待background初始化
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+      
+      if (response && response.success) {
+        console.log('任务启动成功:', response.data)
+        // 切换到处理中页面
+        switchToProcessing()
+      } else {
+        console.error('任务启动失败:', response?.error || '未知错误')
+        // 可在此处添加错误提示逻辑
+      }
+    } catch (error) {
+      console.error('发送消息失败:', error)
+      // 可在此处添加错误提示逻辑
+      alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
+      switchToProcessing()
+    }
+  }
+
+  // 处理Checkpoint提交
+  const handleCheckpoint = async (prompt: string, isAccept: boolean, checkpointId: string) => {
+    console.log('检查点:', isAccept ? '接受' : '拒绝', '提交的prompt:', prompt)
+    try {
+      // 带重试机制的消息发送
+      let response = null
+      let retryCount = 0
+      const maxRetries = 3
+      
+      while (retryCount < maxRetries) {
+        try {
+          response = await chrome.runtime.sendMessage({
+            type: 'CHECKPOINT_PROMPT',
+            payload: {
+              checkpointId: checkpointId,
+              action: isAccept ? 'approve' : 'reject',
+              prompt: prompt || ''
+            }
+          })
+          break
+        } catch (err) {
+          retryCount++
+          if (retryCount >= maxRetries) throw err
+          // 重试间隔500ms，等待background初始化
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+      
+      if (response && response.success) {
+        console.log('检查点提交成功:', response.data)
+        
+      } else {
+        console.error('检查点提交失败:', response?.error || '未知错误')
+      }
+    } catch (error) {
+      console.error('检查点提交失败:', error)
+      // 可在此处添加错误提示逻辑
+      alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
+    }
+  }
 
   // 计算最佳显示位置
   const initialPosition = useMemo(() => {
@@ -140,7 +245,7 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
 
     // 计算选中区域中心点
     const selectionCenterX = (start.x + end.x) / 2
-    const selectionCenterY = (start.y + end.y) / 2
+    // const selectionCenterY = (start.y + end.y) / 2
 
     // 动态调整位置优先级：根据选中区域在视口的位置决定优先尝试的位置
     const rightSpace = viewportWidth - end.x - GAP
@@ -258,48 +363,7 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
         <div ref={contentRef} className="content-box-body p-0">
           {stage === 'PromptInput' && (
             <PromptInputStage
-              onSubmit={async (prompt) => {
-                console.log('提交的prompt:', prompt)
-                try {
-                  // 带重试机制的消息发送
-                  let response = null
-                  let retryCount = 0
-                  const maxRetries = 3
-                  
-                  while (retryCount < maxRetries) {
-                    try {
-                      response = await chrome.runtime.sendMessage({
-                        type: 'START_TASK',
-                        payload: {
-                          pipelineId: 'default', // 默认pipeline
-                          prompt: prompt
-                        }
-                      })
-                      break
-                    } catch (err) {
-                      retryCount++
-                      if (retryCount >= maxRetries) throw err
-                      // 重试间隔500ms，等待background初始化
-                      await new Promise(resolve => setTimeout(resolve, 500))
-                    }
-                  }
-                  
-                  if (response && response.success) {
-                    console.log('任务启动成功:', response.data)
-                    // 切换到处理中页面
-                    switchToProcessing()
-                  } else {
-                    console.error('任务启动失败:', response?.error || '未知错误')
-                    // 可在此处添加错误提示逻辑
-                  }
-                } catch (error) {
-                  console.error('发送消息失败:', error)
-                  // 可在此处添加错误提示逻辑
-                  alert('连接后台失败，请刷新页面后重试或检查扩展是否正确安装')
-                  switchToProcessing()
-                }
-              }
-            }
+              onSubmit={handleSubmit}
               placeholder="请输入你的需求..."
               submitText="提交"
             />
@@ -307,17 +371,8 @@ export default function ContentBox({ selectPos, onClose }: ContentBoxProps) {
           
           {stage === 'Processing' && (
             <ProcessingStage
-              onContinue={(prompt) => {
-                console.log('继续处理，prompt:', prompt)
-                // 后续可在此处添加继续逻辑
-                
-              }}
-              onReject={(prompt) => {
-                console.log('拒绝处理，prompt:', prompt)
-                // 后续可在此处添加拒绝逻辑
-
-              }}
-              stageContent="这里应该显示Stage或检查点详情"
+              onContinue={(prompt, checkpointId) => handleCheckpoint(prompt, true, checkpointId)}
+              onReject={(prompt, checkpointId) => handleCheckpoint(prompt, false, checkpointId)}
               placeholder="请输入检查点建议..."
             />
           )}

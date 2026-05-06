@@ -1,4 +1,4 @@
-import React from 'react'
+// import React from 'react'
 import { useDrag, UseDragPosition } from '../hooks/useDrag.tsx'
 import "../App.css"
 
@@ -8,7 +8,7 @@ interface FloatBoxProps {
 
 export default function FloatBox({ onActivate }: FloatBoxProps) {
   const initialPosition: UseDragPosition = { x: window.innerWidth - 180, y: window.innerHeight - 180 }
-  const { ref, position, isDragging } = useDrag(initialPosition, {
+  const { ref, position } = useDrag(initialPosition, {
     onClick: onActivate,
     threshold: 3,
     bounds: 'viewport'

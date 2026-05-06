@@ -10,6 +10,7 @@ export interface ExecutionStatus {
   pipelineId: string;
   executionId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'approved' | 'rejected' | 'cancelled';
+  stageStatus?: StageStatus[];
   currentStageId?: string;
   totalDuration?: number;
   lastUpdated: number;
@@ -23,17 +24,24 @@ export interface PipelineStatus {
 }
 // Checkpoint - 检查点信息
 export interface CheckpointStatus {
+  stageId: string;
   executionId: string;
   checkpointId: string;
   reviews: string;
   action?: 'accept' | 'reject';
   prompt?: string;
 }
+// StageStatus - 阶段状态信息
+export interface StageStatus {
+  stageId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'approved' | 'rejected' | 'cancelled';
+  output?: string;
+}
 // StartTaskRequest - 启动任务信息
 export interface StartTaskRequest {
   pipelineId: string;
-  sourceData?: string;
-  prompt?: string;
+  sourcePath: string[];
+  prompt: string;
 }
 class PipelineApiService {
   private baseUrl = 'http://60.204.174.188:8000';
@@ -102,7 +110,14 @@ class PipelineApiService {
         'accept': 'application/json',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(request)
+      body: JSON.stringify({
+        'pipeline_id' : request.pipelineId as string,
+        'demand' : request.prompt || '',
+        'context' : {
+          'repo_path' : '/Backend/output',
+          'focus_files' : request.sourcePath.map(path => ({ "path": path }))
+        }
+      })
     });
 
     if (!response.ok) {
@@ -112,7 +127,7 @@ class PipelineApiService {
     return response.json();
   }
 
-  // GetCheckpoint - 获取待审批检查点信息
+  // GetCheckpoint - 获取Stage的审批检查点信息
   async getCheckpoint(executionId: string, stageId: string): Promise<any> {
     const response = await fetch(`${this.baseUrl}/api/checkpoints/${executionId}/${stageId}`, {
       method: 'GET',
@@ -122,15 +137,16 @@ class PipelineApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch checkpoint details: ${response.statusText}`);
+      // throw new Error(`Failed to fetch checkpoint details: ${response.statusText}`);
+      console.log('Failed to fetch checkpoint details:', response.statusText)
     }
 
     return response.json();
   }
 
   // CheckpointPrompt - 提交检查点反馈
-  async checkpointPrompt(request: CheckpointStatus): Promise<any> {
-    if (request.action==='accept') {
+  async checkpointPrompt(request: { executionId: string ,checkpointId: string, action: 'approve' | 'reject', prompt: string }): Promise<any> {
+    if (request.action==='approve') {
       const response = await fetch(`${this.baseUrl}/api/checkpoints/${request.executionId}/${request.checkpointId}/approve`, {
         method: 'POST',
         headers: {
@@ -144,6 +160,7 @@ class PipelineApiService {
       });
 
       if (!response.ok) {
+        console.log('Failed to process checkpoint approval:', response)
         throw new Error(`Failed to process checkpoint approval: ${response.statusText}`);
       }
       return response.json();

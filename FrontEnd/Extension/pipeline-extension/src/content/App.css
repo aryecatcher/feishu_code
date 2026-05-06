@@ -57,6 +57,7 @@
 .content-box {
   position: fixed;
   min-width: 300px;
+  max-width: 450px;
   min-height: 200px;
   background: #fff;
   color: white;

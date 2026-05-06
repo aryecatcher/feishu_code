@@ -44,7 +44,7 @@ class MessageHandler {
           return this.handleGetDefaultPipeline(sendResponse);
         
         case 'GET_PIPELINE_CONFIG':
-          return this.handleGetPipelineConfig(message.payload, sendResponse);
+          return this.handleGetPipelineConfig(message.payload.pipelineId, sendResponse);
         
         case 'GET_APP_CONFIG':
           return this.handleGetAppConfig(sendResponse);
@@ -56,13 +56,13 @@ class MessageHandler {
           return this.handleStartTask(message.payload, sender, sendResponse);
         
         case 'GET_CHECKPOINT':
-          return this.handleGetCheckpoint(message.payload, sender, sendResponse);
+          return this.handleGetCheckpoint(message.payload.stageId, sender, sendResponse);
         
         case 'CHECKPOINT_PROMPT':
           return this.handleCheckpointPrompt(message.payload, sender, sendResponse);
 
         case 'GET_TASK_STATE':
-          return this.handleGetTaskState(message.payload, sendResponse);
+          return this.handleGetTaskState(message.payload, sender, sendResponse);
         
         case 'CHANGE_TASK_STATE':
           return this.handleChangeTaskState(message.payload, sendResponse);
@@ -165,27 +165,45 @@ class MessageHandler {
   }
 
   // GetCheckpoint - 获取待审批检查点信息
-  private async handleGetCheckpoint(message: { executionId: string, stageId: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
-    const { executionId, stageId } = message;
-    const result = await pipelineApi.getCheckpoint(executionId, stageId);
+  private async handleGetCheckpoint( stageId: string , sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
+    const senderTabId = sender.tab?.id;
+    if (!senderTabId) {
+      sendResponse({
+        success: false,
+        error: 'Invalid sender: missing tab ID'
+      });
+      return;
+    }
 
-    // 创建检查点状态
-    await appStore.addCheckpointToTask(sender.tab?.id as number, 
-      {
-        executionId: result.execution_id as string,
-        checkpointId: result.id as string,
-        reviews: 'Need to be updated'
-      } as CheckpointStatus
-    )
-
+    const task = appStore.getTaskByTabId(senderTabId);
+    if (!task) {
+      sendResponse({
+        success: false,
+        error: 'No task found for this tab'
+      });
+      return;
+    }
+    
+    // 先拉取检查点信息
+    const response = await pipelineApi.getCheckpoint(task.executionStatus.executionId as string, stageId);
+    if (response && response.stage_result?.output){
+        sendResponse({
+          success: true,
+          data: response
+        });
+        return;
+    }
+    
+    // 所有未返回的情况都统一返回未找到检查点
     sendResponse({
-      success: true,
-      data: result
+      success: false,
+      error: 'No checkpoint found for this stage',
+      data: response
     });
   }
   
   // CheckpointPrompt - 提交检查点反馈
-  private async handleCheckpointPrompt(request: CheckpointStatus, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
+  private async handleCheckpointPrompt(request: { executionId: string ,checkpointId: string, action: 'approve' | 'reject', prompt: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
     const senderTabId = sender.tab?.id;
     if (!senderTabId) {
       sendResponse({
@@ -205,7 +223,12 @@ class MessageHandler {
     }
     
     // 提交检查点到API
-    const result = await pipelineApi.checkpointPrompt(request);
+    const result = await pipelineApi.checkpointPrompt({
+      executionId: task.executionStatus.executionId as string,
+      checkpointId: request.checkpointId,
+      action: request.action,
+      prompt: request.prompt
+    });
     
     // 更新检查点状态
     await appStore.updateCheckpoint(senderTabId, 
@@ -224,12 +247,12 @@ class MessageHandler {
 
 
   // GetTaskState - 获取当前任务状态
-  private async handleGetTaskState(payload: { taskId?: string; senderTabId?: number }, sendResponse: (response: MessageResponse) => void) {
-    const senderTabId = payload?.senderTabId;
+  private async handleGetTaskState(payload: { taskId?: string; } = {}, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) {
+    const senderTabId = sender.tab?.id;
     if (!senderTabId) {
       sendResponse({
         success: false,
-        error: 'Missing senderTabId parameter'
+        error: 'Invalid sender: missing tab ID'
       });
       return;
     }
@@ -243,9 +266,10 @@ class MessageHandler {
       return;
     }
 
-    // 如果提供了taskId，从API获取最新状态
-    if (payload.taskId) {
-      const state = await pipelineApi.getTaskState(payload.taskId);
+    // 如果提供了taskId或可读取到executionId，从API获取最新状态
+    if (payload.taskId || task.executionStatus?.executionId) {
+      const taskId = payload.taskId || task.executionStatus?.executionId;
+      const state = await pipelineApi.getTaskState(taskId as string);
       await appStore.updateTask(senderTabId, 
         {
           executionStatus: {

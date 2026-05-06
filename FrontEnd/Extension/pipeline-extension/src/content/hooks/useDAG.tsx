@@ -115,7 +115,17 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     };
   });
 
-  return { nodes: layoutedNodes, edges };
+  // 校正Y坐标，让所有节点从顶部(0)开始排列，消除dagre自动居中的偏移
+  const minY = Math.min(...layoutedNodes.map(n => n.position.y));
+  const adjustedNodes = layoutedNodes.map(n => ({
+    ...n,
+    position: {
+      ...n.position,
+      y: n.position.y - minY
+    }
+  }));
+
+  return { nodes: adjustedNodes, edges };
 };
 
 export const useDAG = (
@@ -151,6 +161,13 @@ export const useDAG = (
 
   const [reactFlowNodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [reactFlowEdges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
+
+  // 监听外部传入的nodes和edges变化，更新内部状态
+  React.useEffect(() => {
+    console.log('DAG更新: ', layoutedNodes, layoutedEdges);
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
+  }, [layoutedNodes, layoutedEdges, setNodes, setEdges]);
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: any) => {

@@ -19,7 +19,7 @@ const DEFAULT_CONFIG: AppConfig = {
   serviceUrl: '',
   pipelineIdList: [],
   autoRefresh: true,        // 默认开启
-  refreshInterval: 10000,   // 默认10秒刷新一次
+  refreshInterval: 5000,   // 默认5秒刷新一次
   lastUpdated: 0
 };
 
@@ -134,16 +134,13 @@ class AppStore {
   }
 
   // 给任务添加检查点
-  async addCheckpointToTask(senderTabId: number, checkpoint: Partial<CheckpointStatus> & { checkpointId: string; executionId: string }): Promise<TaskState | undefined> {
+  async addCheckpointToTask(senderTabId: number, checkpoint: CheckpointStatus): Promise<TaskState | undefined> {
     const task = this.tasks[senderTabId];
     if (!task) {
       return undefined;
     }
     
     const newCheckpoint: CheckpointStatus = {
-      reviews: '',
-      action: undefined,
-      prompt: undefined,
       ...checkpoint
     };
     
