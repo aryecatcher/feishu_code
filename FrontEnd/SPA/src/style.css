@@ -440,7 +440,79 @@ a {
 
 
 
-@media (max-width: 1024px) {
+/* 快速开始区块 */
+.quick-start {
+  margin-top: 24px;
+}
+
+.quick-start h2 {
+  margin: 0 0 16px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.quick-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.quick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 20px;
+  background: #fff;
+  border: 1px solid #e7ebf3;
+  border-radius: 16px;
+  text-align: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.quick-card:hover {
+  border-color: #2563eb;
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.15);
+}
+
+.quick-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.quick-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.quick-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* 按钮样式 */
+.btn-outline {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.btn-outline:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .quick-cards {
+    grid-template-columns: 1fr;
+  }
+}
   .hero {
     grid-template-columns: 1fr;
   }
