@@ -20,7 +20,7 @@
         <div class="audit-section">
           <h3 class="audit-section-title">📋 后端返回方案</h3>
           <div class="audit-plan-content">
-            {{ auditData?.content || auditData?.reviews || '后端暂未返回方案内容' }}
+            {{ displayContent }}
           </div>
         </div>
 
@@ -35,17 +35,17 @@
               </li>
               <li>
                 <span class="info-label">检查点ID：</span>
-                <span class="info-value">{{ auditData?.checkpoint_id || '未获取' }}</span>
+                <span class="info-value">{{ checkpointIdentifier }}</span>
               </li>
               <li>
                 <span class="info-label">建议动作：</span>
                 <span class="info-value" :class="actionClass">
-                  {{ auditData?.resolution?.action === 'accept' ? '通过' : auditData?.resolution?.action === 'reject' ? '驳回' : '待确认' }}
+                  {{ actionLabel }}
                 </span>
               </li>
               <li>
-                <span class="info-label">上下文ID：</span>
-                <span class="info-value">{{ auditData?.resolution?.context_id || '未获取' }}</span>
+                <span class="info-label">阶段ID：</span>
+                <span class="info-value">{{ auditData?.stage_id || auditData?.resolution?.context_id || '未获取' }}</span>
               </li>
             </ul>
           </div>
@@ -115,11 +115,33 @@ const formattedAuditData = computed(() => {
   return props.auditData ? JSON.stringify(props.auditData, null, 2) : '{}'
 })
 
+const displayContent = computed(() => {
+  return (
+    props.auditData?.content ||
+    props.auditData?.reviews ||
+    props.auditData?.stage_result?.output ||
+    props.auditData?.stage_result?.content ||
+    '后端暂未返回方案内容'
+  )
+})
+
+const checkpointIdentifier = computed(() => {
+  return props.auditData?.checkpoint_id || props.auditData?.id || '未获取'
+})
+
+const actionLabel = computed(() => {
+  const resolutionAction = props.auditData?.resolution?.action
+  const approvalAction = props.auditData?.approval_action
+  if (resolutionAction === 'accept' || approvalAction === 'approve') return '通过'
+  if (resolutionAction === 'reject' || approvalAction === 'reject') return '驳回'
+  return '待确认'
+})
+
 // 建议动作样式类
 const actionClass = computed(() => {
-  const action = props.auditData?.resolution?.action
+  const action = props.auditData?.resolution?.action || props.auditData?.approval_action
   return {
-    'text-green-600': action === 'accept',
+    'text-green-600': action === 'accept' || action === 'approve',
     'text-red-600': action === 'reject',
     'text-orange-600': !action
   }
@@ -142,15 +164,29 @@ async function handleAction(action: 'approve' | 'reject') {
   try {
     loading.value = true
     const runId = String(props.runId)
-    const checkpointId = String(props.auditData.checkpoint_id)
+    const stageId = String(props.auditData.stage_id || props.auditData.checkpoint_id)
     
     let result
     if (action === 'approve') {
       // 调用通过接口
-      result = await apiClient.default.postApiRunsApprove(runId, checkpointId)
+      result = await apiClient.checkpoint.approveCheckpointApiCheckpointsExecutionIdStageIdApprovePost(
+        runId,
+        stageId,
+        {
+          comment: '审批通过',
+          approver: 'frontend-user',
+        }
+      )
     } else {
       // 调用驳回接口
-      result = await apiClient.default.postApiRunsReject(runId, checkpointId)
+      result = await apiClient.checkpoint.rejectCheckpointApiCheckpointsExecutionIdStageIdRejectPost(
+        runId,
+        stageId,
+        {
+          comment: '审批驳回',
+          rejector: 'frontend-user',
+        }
+      )
     }
 
     emit('success', action, result)
