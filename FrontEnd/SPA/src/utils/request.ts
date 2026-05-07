@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api', // 后端API地址
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:4523/m1/8175900-7935055-default', // 后端API地址
   timeout: 30000,
 })
 
