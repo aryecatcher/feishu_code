@@ -136,3 +136,13 @@ devflow.db
 
 # node_modules
 node_modules/
+
+# output
+output/
+
+# log
+logs/
+*.log
+
+# execution.py
+execution.py

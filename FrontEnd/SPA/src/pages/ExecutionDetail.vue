@@ -527,7 +527,7 @@ async function fetchExecution() {
     }
   } catch (error) {
     console.error('Failed to fetch execution:', error)
-    showToast('获取执行状态失败', 'error')
+    // showToast('获取执行状态失败', 'error')
   } finally {
     loading.value = false
   }
@@ -703,7 +703,7 @@ async function handleApprove() {
     }
     await fetchExecution()
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '审批失败', 'error')
+    // showToast(error?.response?.data?.detail || '审批失败', 'error')
   } finally {
     actionLoading.value = false
   }
@@ -730,7 +730,7 @@ async function confirmReject() {
     }
     await fetchExecution()
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '驳回失败', 'error')
+    // showToast(error?.response?.data?.detail || '驳回失败', 'error')
   } finally {
     actionLoading.value = false
   }
